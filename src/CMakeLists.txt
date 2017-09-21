@@ -1,5 +1,5 @@
 set(ASCGRID AscGrid.cpp)
-set(UTILS UtilsClass/utils.cpp UtilsClass/ModelException.cpp)
+set(UTILS common_func.cpp UtilsClass/utils.cpp UtilsClass/ModelException.cpp)
 INCLUDE_DIRECTORIES(UtilsClass)
 
 set(predP_S_FILES predictPoint_sfd.cpp sfdRegionSimilarity.cpp ${ASCGRID} ${UTILS})
