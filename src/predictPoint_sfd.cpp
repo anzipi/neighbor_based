@@ -1,19 +1,21 @@
-#include <cstdlib>
+﻿#include <cstdlib>
 #include <stdlib.h>
 #include <iostream>
 #include <stdio.h>
 #include <vector>
 #include "AscGrid.h"
-#include "AscGrid.cpp"
+//#include "AscGrid.cpp"
 #include "sfdRegionSimilarity.h"
-#include "sfdRegionSimilarity.cpp"
+//#include "sfdRegionSimilarity.cpp"
 #include <sstream>
 #include <fstream>
 #include <iomanip>
-#include <omp.h>
 #include <cmath>
 #include <algorithm>
 #include <ctime>
+#ifdef SUPPORT_OMP
+#include <omp.h>
+#endif
 #define VERY_SMALL 0.000001
 #define MEMORY_SIZE 5000
 using namespace std;
