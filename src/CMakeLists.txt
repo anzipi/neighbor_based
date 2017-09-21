@@ -1,7 +1,9 @@
 set(ASCGRID AscGrid.cpp)
+set(UTILS UtilsClass/utils.cpp UtilsClass/ModelException.cpp)
+INCLUDE_DIRECTORIES(UtilsClass)
 
-set(predP_S_FILES predictPoint_sfd.cpp sfdRegionSimilarity.cpp ${ASCGRID})
-set(predP_M_FILES predictPoint_mfd.cpp mfdRegionSimilarity.cpp ${ASCGRID})
+set(predP_S_FILES predictPoint_sfd.cpp sfdRegionSimilarity.cpp ${ASCGRID} ${UTILS})
+set(predP_M_FILES predictPoint_mfd.cpp mfdRegionSimilarity.cpp ${ASCGRID} ${UTILS})
 
 add_executable(predP_S ${predP_S_FILES})
 add_executable(predP_M ${predP_M_FILES})
