@@ -1,4 +1,4 @@
-#include "AscGrid.h"
+ï»¿#include "AscGrid.h"
 #include <math.h>
 #include <iostream>
 #include<cmath>
@@ -204,7 +204,7 @@ void AscGrid::readAscGridGDAL(string filename){// added by jiangjc
 		totalRows = poBandsrc->GetYSize();
 		totalCols = poBandsrc->GetXSize();
 		xCor = pTransform[0];
-		yCor = pTransform[3] - pTransform[1]*totalRows;// ÓÉ×óÉÏ½Ç±äÎª×óÏÂ½Ç
+		yCor = pTransform[3] - pTransform[1]*totalRows;// ç”±å·¦ä¸Šè§’å˜ä¸ºå·¦ä¸‹è§’
         cellSize = pTransform[1];// w-e pixel resolution
 		noDataVal = poBandsrc->GetNoDataValue();
 		//read in the body
@@ -229,7 +229,7 @@ void AscGrid::readAscGridGDAL(string filename){// added by jiangjc
 
 }
 void AscGrid::readAscGrid(string filename){
-	ifstream AscReader; // ifstream: ¶Á²Ù×÷£¨ÊäÈë£©µÄÎÄ¼şÀà
+	ifstream AscReader; // ifstream: è¯»æ“ä½œï¼ˆè¾“å…¥ï¼‰çš„æ–‡ä»¶ç±»
     if (filename != ""){
         inAscFileName = filename;
 		AscReader.open(inAscFileName.c_str(),ios::in);
@@ -240,19 +240,19 @@ void AscGrid::readAscGrid(string filename){
 			string tmp;
 			for (int i = 0; i < 6; i++)
 			{
-				getline(AscReader,tmp);//°´ĞĞ¶ÁÈ¡Êı¾İ£¬AscReader±íÊ¾Ò»¸öÊäÈëÁ÷£¬´ËÓï¾ä±íÊ¾½«´ÓÊäÈëÁ÷ÖĞ¶ÁÈ¡µÄÊı¾İ·ÅÈëtmpÖĞ
-				int j = tmp.find_last_of(' ');//²éÕÒ×Ö·û´®ÖĞ×îºóÒ»¸ö³öÏÖ¿Õ¸ñµÄÎ»ÖÃ
-				int end = tmp.find('\n');// substrÖ÷Òª¹¦ÄÜÊÇ¸´ÖÆ×Ó×Ö·û´®£¬ÒªÇó´ÓÖ¸¶¨Î»ÖÃ¿ªÊ¼£¬²¢¾ßÓĞÖ¸¶¨µÄ³¤¶È
-				string extractNum = (tmp.substr(j+1,end)).c_str();//cÓïÑÔÖĞÃ»ÓĞstringÀàĞÍ£¬±ØĞëÍ¨¹ıstringÀà¶ÔÏóµÄ³ÉÔ±º¯Êıc_str()°Ñstring ¶ÔÏó×ª»»³ÉcÖĞµÄ×Ö·û´®ÑùÊ½
+				getline(AscReader,tmp);//æŒ‰è¡Œè¯»å–æ•°æ®ï¼ŒAscReaderè¡¨ç¤ºä¸€ä¸ªè¾“å…¥æµï¼Œæ­¤è¯­å¥è¡¨ç¤ºå°†ä»è¾“å…¥æµä¸­è¯»å–çš„æ•°æ®æ”¾å…¥tmpä¸­
+				int j = tmp.find_last_of(' ');//æŸ¥æ‰¾å­—ç¬¦ä¸²ä¸­æœ€åä¸€ä¸ªå‡ºç°ç©ºæ ¼çš„ä½ç½®
+				int end = tmp.find('\n');// substrä¸»è¦åŠŸèƒ½æ˜¯å¤åˆ¶å­å­—ç¬¦ä¸²ï¼Œè¦æ±‚ä»æŒ‡å®šä½ç½®å¼€å§‹ï¼Œå¹¶å…·æœ‰æŒ‡å®šçš„é•¿åº¦
+				string extractNum = (tmp.substr(j+1,end)).c_str();//cè¯­è¨€ä¸­æ²¡æœ‰stringç±»å‹ï¼Œå¿…é¡»é€šè¿‡stringç±»å¯¹è±¡çš„æˆå‘˜å‡½æ•°c_str()æŠŠstring å¯¹è±¡è½¬æ¢æˆcä¸­çš„å­—ç¬¦ä¸²æ ·å¼
 				switch (i){
 					case 0:
-						totalCols = atoi(extractNum.c_str());// atoi×Ö·û´®×ªÕûĞÍ
+						totalCols = atoi(extractNum.c_str());// atoiå­—ç¬¦ä¸²è½¬æ•´å‹
 						break;
 					case 1:
 						totalRows = atoi(extractNum.c_str());
 						break;
 					case 2:
-						xCor = atof(extractNum.c_str()); //×Ö·û´®×ªfloat
+						xCor = atof(extractNum.c_str()); //å­—ç¬¦ä¸²è½¬float
 						break;
 					case 3:
 						yCor = atof(extractNum.c_str());
@@ -282,7 +282,7 @@ void AscGrid::readAscGrid(string filename){
 					getline(AscReader,tmp);
 					string::size_type pos1, pos2;
 					pos1 = 0;
-					pos2 = tmp.find_first_of(' ',pos1); //´Ópos1¿ªÊ¼²éÕÒÔÚ×Ö·û´®ÖĞµÚÒ»¸ö³öÏÖ¿Õ¸ñµÄÎ»ÖÃ
+					pos2 = tmp.find_first_of(' ',pos1); //ä»pos1å¼€å§‹æŸ¥æ‰¾åœ¨å­—ç¬¦ä¸²ä¸­ç¬¬ä¸€ä¸ªå‡ºç°ç©ºæ ¼çš„ä½ç½®
 					while(string::npos > pos2){
 						stringVal.push_back(tmp.substr(pos1,pos2-pos1));
 						pos1 = pos2 + 1;
@@ -403,7 +403,7 @@ void AscGrid::readAscGrid(string filename, double x_min, double y_min, double x_
 
 void AscGrid::createAscGridGADL(string srcfilename,string filename){
     if(filename !=""){
-		// ¶ÁÈ¡Í¶Ó°ĞÅÏ¢
+		// è¯»å–æŠ•å½±ä¿¡æ¯
 		GDALDataset* poDatasetsrc = (GDALDataset *) GDALOpen( srcfilename.c_str(), GA_ReadOnly );
 		if( poDatasetsrc == NULL)
 		{
@@ -420,7 +420,7 @@ void AscGrid::createAscGridGADL(string srcfilename,string filename){
 			GDALClose((GDALDatasetH)poDatasetsrc);
 			poDatasetsrc = NULL;
 		}
-		//ĞÂ½¨tiffÎÄ¼ş
+		//æ–°å»ºtiffæ–‡ä»¶
 		GDALDriver* poDriver = NULL;
 		string format = "GTiff";
 		poDriver = GetGDALDriverManager()->GetDriverByName(format.c_str());
@@ -455,7 +455,7 @@ void AscGrid::createAscGridGADL(string srcfilename,string filename){
 void AscGrid::writeAscGridGDAL(string filename){
     GDALDataset* poDataset = NULL;
 	poDataset = (GDALDataset *) GDALOpen( filename.c_str(), GA_Update );
-	if( poDataset == NULL /*¼ì²éÊÇ·ñÕı³£´ò¿ªÎÄ¼ş*/)
+	if( poDataset == NULL /*æ£€æŸ¥æ˜¯å¦æ­£å¸¸æ‰“å¼€æ–‡ä»¶*/)
 	{
 		//do something
 		cout<<"[ERROR] data file is not open correct"<<endl;
