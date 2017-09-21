@@ -13,7 +13,7 @@
 #include "common_func.h"
 #include "mfdRegionSimilarity.h"
 
-#define MEMORY_SIZE 5000
+//#define MEMORY_SIZE 5000
 using namespace std;
 
 int main(int argc, char *argv[]){
