@@ -68,39 +68,44 @@ using namespace std;
 /*!
  * Global utility definitions
  */
-/**
- * \def NODATA_VALUE
- * \brief NODATA value
- */
-#ifndef NODATA_VALUE
-#define NODATA_VALUE    -9999.0f
-#endif /* NODATA_VALUE */
-const float MISSINGFLOAT = -1 * FLT_MAX;
+///**
+// * \def NODATA_VALUE
+// * \brief NODATA value
+// */
+//#ifndef NODATA_VALUE
+//#define NODATA_VALUE    -9999.0f
+//#endif /* NODATA_VALUE */
+const float NODATA_VALUE = -9999.f;
+//const float MISSINGFLOAT = -1 * FLT_MAX;
 const float MAXIMUMFLOAT = FLT_MAX;
-#ifndef PATH_MAX
-#define PATH_MAX 1024
-#endif /* PATH_MAX */
-/**
- * \def ZERO
- * \brief zero value used in numeric calculation
- */
-#ifndef UTIL_ZERO
-#define UTIL_ZERO        1.0e-6f
-#endif /* UTIL_ZERO */
-/**
- * \def PI
- * \brief PI value used in numeric calculation
- */
-#ifndef PI
-#define PI                3.14159265358979323846f
-#endif /* PI */
-/**
- * \def MINI_SLOPE
- * \brief Minimum slope gradient
- */
-#ifndef MINI_SLOPE
-#define MINI_SLOPE        0.0001f
-#endif /* MINI_SLOPE */
+const int   PATH_MAX = 1024;
+const float UTIL_ZERO = 1.e-6f;
+const float MINI_SLOPE = 0.0001f;
+//const float PI = 3.14159265358979323846f;
+//#ifndef PATH_MAX
+//#define PATH_MAX 1024
+//#endif /* PATH_MAX */
+///**
+// * \def ZERO
+// * \brief zero value used in numeric calculation
+// */
+//#ifndef UTIL_ZERO
+//#define UTIL_ZERO        1.0e-6f
+//#endif /* UTIL_ZERO */
+///**
+// * \def PI
+// * \brief PI value used in numeric calculation
+// */
+//#ifndef PI
+//#define PI                3.14159265358979323846f
+//#endif /* PI */
+///**
+// * \def MINI_SLOPE
+// * \brief Minimum slope gradient
+// */
+//#ifndef MINI_SLOPE
+//#define MINI_SLOPE        0.0001f
+//#endif /* MINI_SLOPE */
 
 #ifdef windows
 #define Tag_ModuleDirectoryName "\\"
