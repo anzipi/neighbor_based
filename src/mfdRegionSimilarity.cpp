@@ -1,10 +1,13 @@
-#include <sstream>
+﻿
 #include "mfdRegionSimilarity.h"
+#include <sstream>
 #include <iostream>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#ifdef SUPPORT_OMP
 #include <omp.h>
+#endif
 #include <vector>
 #include <algorithm>
 #include <string>

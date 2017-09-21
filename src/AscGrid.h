@@ -1,4 +1,4 @@
-//for environmental data input and
+﻿//for environmental data input and
 //inference result output
 //using ascgrid file format
 
@@ -74,8 +74,8 @@ class AscGrid
 		string inAscFileName;
 		string outAscFileName;
 
-
-		double m_dMax, m_dMin;//这个grid数据的最大值和最小值
+        //这个grid数据的最大值和最小值
+		double m_dMax, m_dMin;
 		void initGridStatistics();
 };
 
