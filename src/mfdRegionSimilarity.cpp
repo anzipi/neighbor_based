@@ -1,5 +1,4 @@
-﻿
-#include "mfdRegionSimilarity.h"
+﻿#include "mfdRegionSimilarity.h"
 #include <sstream>
 #include <iostream>
 #include <cmath>

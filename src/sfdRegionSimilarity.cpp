@@ -1,13 +1,15 @@
-#include <sstream>
+﻿#include <sstream>
 #include "sfdRegionSimilarity.h"
 #include <iostream>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-#include <omp.h>
 #include <vector>
 #include <algorithm>
 #include <string>
+#ifdef SUPPORT_OMP
+#include <omp.h>
+#endif
 using namespace std;
 
 sfdRegionSimilarity::sfdRegionSimilarity(){

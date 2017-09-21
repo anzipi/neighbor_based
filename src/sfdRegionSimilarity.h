@@ -1,6 +1,8 @@
-#ifndef SFDREGIONSIMILARITY_H
+﻿#ifndef SFDREGIONSIMILARITY_H
 #define SFDREGIONSIMILARITY_H
+#ifdef SUPPORT_OMP
 #include <omp.h>
+#endif
 #include "AscGrid.h"
 #define VERY_SMALL 0.000001
 using namespace std;
