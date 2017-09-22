@@ -5,14 +5,11 @@ set(COMMON_TAUDEM TauDEM/commonLib.cpp TauDEM/tiffIO.cpp)
 set(UTILS common_func.cpp UtilsClass/utils.cpp UtilsClass/ModelException.cpp)
 INCLUDE_DIRECTORIES(UtilsClass TauDEM)
 
-set(predP_S_FILES predictPoint_sfd.cpp sfdRegionSimilarity.cpp ${ASCGRID} ${UTILS} ${COMMON_TAUDEM})
-set(predP_M_FILES predictPoint_mfd.cpp mfdRegionSimilarity.cpp ${ASCGRID} ${UTILS} ${COMMON_TAUDEM})
+set(FD_FILES predict_fd.cpp sfdRegionSimilarity.cpp ${ASCGRID} ${UTILS} ${COMMON_TAUDEM})
 
-add_executable(predP_S ${predP_S_FILES})
-add_executable(predP_M ${predP_M_FILES})
+add_executable(neighbor_fd ${FD_FILES})
 
-set(MY_TARGETS predP_S
-               predP_M)
+set(MY_TARGETS neighbor_fd)
 
 # TauDEM programs
 set(D8 TauDEM/D8FlowDirmn.cpp TauDEM/d8.cpp TauDEM/Node.cpp ${COMMON_TAUDEM})

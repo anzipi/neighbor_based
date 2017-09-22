@@ -85,16 +85,22 @@ IF (OPENMP_FOUND)
 ENDIF ()
 # Set a default build type for single-configuration
 # CMake generators if no build type is set.
-IF(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
-   SET(CMAKE_BUILD_TYPE RelWithDebInfo)
-ENDIF()
+#IF(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+#   SET(CMAKE_BUILD_TYPE RelWithDebInfo)
+#ENDIF()
 
 # Select flags.
 # refers to https://software.intel.com/en-us/articles/intel-cluster-toolkit-for-linux-error-when-compiling-c-aps-using-intel-mpi-library-compilation-driver-mpiicpc
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX")
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
-SET(CMAKE_CXX_FLAGS_RELEASE "-O2")
-SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g")
+IF(MSVC)
+    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/O2")
+    SET(CMAKE_CXX_FLAGS_RELEASE "/O2 /Zi")
+    SET(CMAKE_CXX_FLAGS_DEBUG  "/O2 /Zi")
+ELSE()
+    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
+    SET(CMAKE_CXX_FLAGS_RELEASE "-O2")
+    SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g")
+ENDIF()
 
 INCLUDE_DIRECTORIES(${GDAL_INCLUDE_DIR} ${MPI_INCLUDE_PATH})
 
