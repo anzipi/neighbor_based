@@ -16,6 +16,7 @@
 
 // 4. Include other header files of current project if existed.
 #include "AscGrid.h"
+#include "flowInCells.h"
 #include "common_func.h"
 #include "sfdRegionSimilarity.h"
 
@@ -149,159 +150,200 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
                 "for each cell =============" << endl;
         }
         /*!
-         * Map to store the nodes of upstream inflow cells
+         * Map to store the ``Cell`` instance of each cell
          * key is index of cell, i.e., row * nRows + col
-         * value is the vector of indexes of all upstream cells
+         * value is the ``Cell`` instance
          */
-        map<int, vector<int> > upCellRC_map;
-        bool finished_flag = false;
+        map<int, Cell*> cells_map;
         int i, j, in, jn, k, cellidx, cellidx_n;
         int ig, jg, ing, jng; // global row and col
         short tempNeighbor, tmpstream;
         short fd8; // d8 flow direction
         float angle; // dinf flow direction
+        float tmp_env; // temp environment value
         bool no_stream, no_stream_n;
-        while (!finished_flag) {
-            while (!que.empty())
-            {
-                //Takes next node with no contributing neighbors
-                temp = que.front();
-                que.pop();
-                i = temp.x;  // col
-                j = temp.y;  // row
-                //cout << "remain que num: " << que.size() << ", current x: " << i << ", y: " << j << 
-                //    ", upCellRC_map: " << upCellRC_map.size() << endl;
-                if (!fdir_part->hasAccess(i, j) || fdir_part->isNodata(i, j)) {
+        while (!que.empty())
+        {
+            //Takes next node with no contributing neighbors
+            temp = que.front();
+            que.pop();
+            i = temp.x;  // col
+            j = temp.y;  // row
+            //cout << "remain que num: " << que.size() << ", current x: " << i << ", y: " << j << 
+            //    ", upCellRC_map: " << upCellRC_map.size() << endl;
+            if (!fdir_part->hasAccess(i, j) || fdir_part->isNodata(i, j)) {
+                continue;
+            }
+            fdir_part->localToGlobal(i, j, ig, jg);
+            cellidx = ig + jg * totalY;
+            // Evaluate up slope inflow cells
+            for (k = 1; k <= 8; k ++) {
+                in = i + d1[k];
+                jn = j + d2[k];
+                fdir_part->localToGlobal(in, jn, ing, jng);
+                cellidx_n = ing + jng * totalY;
+                if (!fdir_part->hasAccess(in, jn) || fdir_part->isNodata(in, jn)) {
                     continue;
                 }
-                fdir_part->localToGlobal(i, j, ig, jg);
-                cellidx = ig + jg * totalY;
-                // Evaluate up slope inflow cells
-                for (k = 1; k <= 8; k ++) {
-                    in = i + d1[k];
-                    jn = j + d2[k];
-                    fdir_part->localToGlobal(in, jn, ing, jng);
-                    cellidx_n = ing + jng * totalY;
-                    if (!fdir_part->hasAccess(in, jn) || fdir_part->isNodata(in, jn)) {
+                if (fdmodel == 0) {
+                    fdir_part->getData(in, jn, fd8);
+                    if (abs(fd8 - k) != 4) {
                         continue;
                     }
-                    if (fdmodel == 0) {
-                        fdir_part->getData(in, jn, fd8);
-                        if (abs(fd8 - k) != 4) {
-                            continue;
-                        }
-                    }
-                    else if (fdmodel == 1) {
-                        fdir_part->getData(in, jn, angle);
-                        double p = prop(angle, (k + 4) % 8, dx, dy);
-                        /// this can be a parameter, which means how many inflow water
-                        /// can be seen as the upstream of the current cell.
-                        double thresh = 0.1;
-                        if (p < thresh) {
-                            continue;
-                        }
-                    }
-                    vector<int> tmp_index_vec;
-                    // exclude stream data
-                    stream_part->getData(in, jn, tmpstream);
-                    no_stream_n = tmpstream <= 0 || stream_part->isNodata(in, jn);
-                    if (no_stream_n) {
-                        if (upCellRC_map.find(cellidx_n) == upCellRC_map.end()) {
-                            tmp_index_vec.push_back(cellidx_n);
-                            upCellRC_map.insert(make_pair(cellidx_n, tmp_index_vec));
-                        }
-                        else {
-                            upCellRC_map.at(cellidx_n).push_back(cellidx_n);
-                        }
-                    }
-                    // exclude stream data
-                    stream_part->getData(i, j, tmpstream);
-                    no_stream = tmpstream <= 0 || stream_part->isNodata(i, j);
-                    if (no_stream) {
-                        if (upCellRC_map.find(cellidx) == upCellRC_map.end()) {
-                            vector<int> tmp_indexes;
-                            upCellRC_map.insert(make_pair(cellidx, tmp_indexes));
-                        }
-                        if (no_stream_n) {
-                            vector<int> upindexes = upCellRC_map.at(cellidx_n);
-                            for (vector<int>::iterator it = upindexes.begin(); it != upindexes.end(); it++) {
-                                upCellRC_map.at(cellidx).push_back(*it);
-                            }
-                            vector<int>(upCellRC_map.at(cellidx)).swap(upCellRC_map.at(cellidx));
-                        }
+                }
+                else if (fdmodel == 1) {
+                    fdir_part->getData(in, jn, angle);
+                    double p = prop(angle, (k + 4) % 8, dx, dy);
+                    /// this can be a parameter, which means how many inflow water
+                    /// can be seen as the upstream of the current cell.
+                    double thresh = 0.1;
+                    if (p < thresh) {
+                        continue;
                     }
                 }
-                // End evaluate up slope inflow cells
-                // check and push to que the newest cells without inflow
-                if (fdmodel == 0) {
-                    fdir_part->getData(i, j, fd8);
-                    in = i + d1[fd8];
-                    jn = j + d2[fd8];
+                vector<int> tmp_index_vec;
+                // exclude stream data
+                stream_part->getData(in, jn, tmpstream);
+                no_stream_n = tmpstream <= 0 || stream_part->isNodata(in, jn);
+                if (no_stream_n) {
+                    if (cells_map.find(cellidx_n) == cells_map.end()) {
+                        Cell* cur_cell = new Cell(cellidx_n);
+                        for (int kk = 0; kk < env_num; kk++) {
+                            cur_cell->addEnvValue(env_parts[kk].getData(in, jn, tmp_env));
+                        }
+                        cells_map.insert(make_pair(cellidx_n, cur_cell));
+                    }
+                }
+                // exclude stream data
+                stream_part->getData(i, j, tmpstream);
+                no_stream = tmpstream <= 0 || stream_part->isNodata(i, j);
+                if (no_stream) {
+                    if (cells_map.find(cellidx) == cells_map.end()) {
+                        Cell* cur_cell = new Cell(cellidx);
+                        for (int kk = 0; kk < env_num; kk++) {
+                            cur_cell->addEnvValue(env_parts[kk].getData(i, j, tmp_env));
+                        }
+                        cells_map.insert(make_pair(cellidx, cur_cell));
+                    }
+                    if (no_stream_n) {
+                        cells_map.at(cellidx)->addUpCell(cells_map.at(cellidx_n));
+                    }
+                }
+            }
+            // End evaluate up slope inflow cells
+            // check and push to que the newest cells without inflow
+            if (fdmodel == 0) {
+                fdir_part->getData(i, j, fd8);
+                in = i + d1[fd8];
+                jn = j + d2[fd8];
+                neighbor->addToData(in, jn, (short)-1);
+                if (fdir_part->isInPartition(in, jn) && neighbor->getData(in, jn, tempNeighbor) == 0) {
+                    temp.x = in;
+                    temp.y = jn;
+                    que.push(temp);
+                }
+            } 
+            else {
+                fdir_part->getData(i, j, angle);
+                for (k = 1; k <= 8; k++) {
+                    double p = prop(angle, k, dx, dy);
+                    if (p < 0.) continue;
+                    in = i + d1[k];
+                    jn = j + d2[k];
                     neighbor->addToData(in, jn, (short)-1);
                     if (fdir_part->isInPartition(in, jn) && neighbor->getData(in, jn, tempNeighbor) == 0) {
                         temp.x = in;
                         temp.y = jn;
                         que.push(temp);
                     }
-                } 
-                else {
-                    fdir_part->getData(i, j, angle);
-                    for (k = 1; k <= 8; k++) {
-                        double p = prop(angle, k, dx, dy);
-                        if (p < 0.) continue;
-                        in = i + d1[k];
-                        jn = j + d2[k];
-                        neighbor->addToData(in, jn, (short)-1);
-                        if (fdir_part->isInPartition(in, jn) && neighbor->getData(in, jn, tempNeighbor) == 0) {
-                            temp.x = in;
-                            temp.y = jn;
-                            que.push(temp);
-                        }
-                    }
                 }
-                neighbor->addBorders();
-                for (i = 0; i < nx; i++) {
-                    if (neighbor->getData(i, -1, tempNeighbor) != 0 && 
-                        neighbor->getData(i, 0, tempNeighbor) == 0) {
-                        temp.x = i;
-                        temp.y = 0;
-                        que.push(temp);
-                    }
-                    if (neighbor->getData(i, ny, tempNeighbor) != 0 && 
-                        neighbor->getData(i, ny - 1, tempNeighbor) == 0) {
-                        temp.x = i;
-                        temp.y = ny - 1;
-                        que.push(temp);
-                    }
+            }
+            neighbor->addBorders();
+            for (i = 0; i < nx; i++) {
+                if (neighbor->getData(i, -1, tempNeighbor) != 0 && 
+                    neighbor->getData(i, 0, tempNeighbor) == 0) {
+                    temp.x = i;
+                    temp.y = 0;
+                    que.push(temp);
                 }
-                neighbor->clearBorders();
-                finished_flag = que.empty();
+                if (neighbor->getData(i, ny, tempNeighbor) != 0 && 
+                    neighbor->getData(i, ny - 1, tempNeighbor) == 0) {
+                    temp.x = i;
+                    temp.y = ny - 1;
+                    que.push(temp);
+                }
+            }
+            neighbor->clearBorders();
+        }
+
+        /******** TEST CODE *********/
+        //int maxidx = 0;
+        //int maxcount = 0;
+        //int count = 0;
+        //for (map<int, Cell* >::iterator it = cells_map.begin(); it != cells_map.end(); it++) {
+        //    if (fdmodel == 0) {
+        //        if (it->second->upCellsCount() > maxcount) {
+        //            maxcount = it->second->upCellsCount();
+        //            maxidx = it->first;
+        //        }
+        //    }
+        //    else if (fdmodel == 1) {
+        //        vector<int> maxupcells;
+        //        it->second->getUpCellIndexes(maxupcells);
+        //        if (maxupcells.size() > maxcount) {
+        //            maxcount = maxupcells.size();
+        //            maxidx = it->first;
+        //        }
+        //        count += 1;
+        //        cout << count << ": " << maxupcells.size() << "; ";
+        //    }
+        //}
+        //cout << "maxidx: " << maxidx << ", maxcount: " << maxcount << endl;
+        //Cell* tmp_cell = cells_map.at(maxidx);
+        //cout << "Total cells with inflow cells: " << cells_map.size() << endl;
+        //vector<int> maxupcells;
+        //tmp_cell->getUpCellIndexes(maxupcells);
+        //cout << "The maximum inflow cells number is: " << maxupcells.size() << endl;
+        //for (vector<int>::iterator it = maxupcells.begin(); it != maxupcells.end(); it++) {
+        //    pred_part->setData(*it % totalY, *it / totalY, 1.f);
+        //}
+        // Get one environmental variables of one cell's upstream cells
+        int test_idx = 12436;
+        Cell* test_cell = cells_map.at(test_idx);
+        vector<int> test_upIdxes;
+        test_cell->getUpCellIndexes(test_upIdxes);
+        map<int, vector<float> > test_upEnvValues;
+        for (int kk = 0; kk < env_num; kk++) {
+            vector<float> tmpvalues;
+            test_upEnvValues.insert(make_pair(kk, tmpvalues));
+        }
+        for (vector<int>::iterator it = test_upIdxes.begin(); it != test_upIdxes.end(); it++) {
+            vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
+            if (tmpEnvvs.size() != env_num) {
+                continue; // although this may not happen, just check.
+            }
+            for (int kk = 0; kk < env_num; kk++) {
+                test_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);
             }
         }
-        int maxidx = 0;
-        int maxcount = 0;
-        for (map<int, vector<int> >::iterator it = upCellRC_map.begin(); it != upCellRC_map.end(); it++) {
-            if (find(it->second.begin(), it->second.end(), it->first) == it->second.end()) {
-                it->second.push_back(it->first);
+
+        // print environmental values
+        for (int kk = 0; kk < env_num; kk++) {
+            cout << "Env No. " << kk << ", " << envfs[kk] << endl;
+            vector<float> tmpff = test_upEnvValues.at(kk);
+            for (vector<float>::iterator it = tmpff.begin(); it != tmpff.end(); it++) {
+                cout << *it << ", ";
             }
-            if (it->second.size() > maxcount) {
-                maxcount = it->second.size();
-                maxidx = it->first;
-            }
+            cout << endl;
         }
-        vector<int> maxupcells = upCellRC_map.at(maxidx);
-        cout << "Total cells with inflow cells: " << upCellRC_map.size() << endl;
-        cout << "The maximum inflow cells number is: " << maxcount << endl;
-        for (vector<int>::iterator it = maxupcells.begin(); it != maxupcells.end(); it++) {
-            pred_part->setData(*it % totalY, *it / totalY, 1.f);
+
+        /******** TEST CODE DONE *********/
+
+        if (rank == 0) {
+            cout << "============= Read training and validation samples data =============" << endl;
         }
-        for (j = 0; j < ny; j++) // rows
-        {
-            for (i = 0; i < nx; i++) // cols
-            {
-                ;
-            }
-        }
+        // use fdir_rst->geoToGlobalXY(geox, geoy, row, col); to get the row and col from projected coordinates
+
         // END COMPUTING CODE BLOCK
         double computet = MPI_Wtime(); // record computing time
         if (outtype != 1) {

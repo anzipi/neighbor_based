@@ -5,7 +5,7 @@ set(COMMON_TAUDEM TauDEM/commonLib.cpp TauDEM/tiffIO.cpp)
 set(UTILS common_func.cpp UtilsClass/utils.cpp UtilsClass/ModelException.cpp)
 INCLUDE_DIRECTORIES(UtilsClass TauDEM)
 
-set(FD_FILES predict_fd.cpp sfdRegionSimilarity.cpp ${ASCGRID} ${UTILS} ${COMMON_TAUDEM})
+set(FD_FILES predict_fd.cpp sfdRegionSimilarity.cpp flowInCells.cpp ${ASCGRID} ${UTILS} ${COMMON_TAUDEM})
 
 add_executable(neighbor_fd ${FD_FILES})
 
