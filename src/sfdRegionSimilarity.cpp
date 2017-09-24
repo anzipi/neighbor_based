@@ -22,8 +22,8 @@ sfdRegionSimilarity::~sfdRegionSimilarity(){
 // and sign the characteristic areas as 1 in the array "flag"
 int sfdRegionSimilarity::getCharacterNeighbor(int rowSample, int colSample, double ** &dem, double ** &sfd,
 	int totalRows, int totalCols, double noData, vector<int> & rNeighbor, vector<int> & cNeighbor,
-	vector<int> & sfdNeighbor, double ** &flat){
-	flat[rowSample][colSample] = 1;
+	vector<int> & sfdNeighbor, double ** &flag){
+	flag[rowSample][colSample] = 1;
 	//初始信息
 	int neighborSize = 0;
 	int cnt = 0;
@@ -40,14 +40,14 @@ int sfdRegionSimilarity::getCharacterNeighbor(int rowSample, int colSample, doub
 			int colInterest = colSample + cBoundary[m];
 			if(rowInterest >= 0 && rowInterest < totalRows && colInterest >=0 && colInterest < totalCols){
 				double interestValue = dem[rowInterest][colInterest];
-				if(abs(interestValue - noData) > VERY_SMALL && flat[rowInterest][colInterest] == 1){								
+				if(abs(interestValue - noData) > VERY_SMALL && flag[rowInterest][colInterest] == 1){								
 					for(int n = 0; n < 8; n++){
 						int r = rowInterest + rNeighbor[n];
 						int c = colInterest + cNeighbor[n];
 						if(r >= 0 && r < totalRows && c >=0 && c < totalCols){
 							if(abs(sfd[r][c] - noData) > VERY_SMALL){							
-								if(sfd[r][c] == sfdNeighbor[n] && flat[r][c] != 1){
-									flat[r][c] = 1;
+								if(sfd[r][c] == sfdNeighbor[n] && flag[r][c] != 1){
+									flag[r][c] = 1;
 									//cout << n << endl;
 									cnt++;
 								}

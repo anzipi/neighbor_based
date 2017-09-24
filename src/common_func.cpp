@@ -1,4 +1,13 @@
 ﻿#include "common_func.h"
+#include "utilities.h"
+
+char* string_to_char(const string s) {
+    char* c;
+    const int len = s.length();
+    c = new char[len + 1];
+    strcpy(c, s.c_str());
+    return c;
+}
 
 double string_to_double( const std::string& s ){
 	std::istringstream i(s);

@@ -6,6 +6,7 @@
 using namespace::std;
 #define VERY_SMALL 0.000001
 
+char* string_to_char(const string s);
 double string_to_double( const std::string& s );
 void parseStr(string str, char c, vector<string>& tokens);
 string& trimLineBreak(string &s);
