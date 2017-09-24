@@ -40,9 +40,9 @@ using namespace std;
  * \param[in] validf Validation sample path.
  * \param[in] outf Output prediction raster.
  */
-int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char * trainf,
-                      string xname, string yname, string attrname, int freqnum, int outtype,
-                      char *validf=NULL, char *outf=NULL)
+int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string> envfs,
+    char *trainf,string xname, string yname, string attrname, int freqnum, int outtype,
+    char *validf=NULL, char *outf=NULL)
 {
     MPI_Init(NULL, NULL);
     {
@@ -77,7 +77,7 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
             cout << "Row: " << totalY << ", Col: " << totalX << ", cellsize: " << dx << endl;
         }
 
-        // read DEM data into partition
+        // read flow direction data into partition
         tdpartition *fdir_part = NULL;
         fdir_part = CreateNewPartition(fdir_rst->getDatatype(), totalX, totalY, dx, dy, fdir_rst->getNodata());
         // get the size of current partition
@@ -88,7 +88,18 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
         fdir_part->savedxdyc(*fdir_rst);
         fdir_rst->read(xstart, ystart, ny, nx, fdir_part->getGridPointer()); // get the current partition's pointer
 
-        // read parameters data into *partition
+        // read stream data into partition
+        linearpart<short> *stream_part = new linearpart<short>;
+        tiffIO stream_rst(streamf, SHORT_TYPE);
+        if (!fdir_rst->compareTiff(stream_rst))
+        {
+            printf("File size do not match\n%s\n", streamf);
+            MPI_Abort(MCW, 5);
+            return 1;
+        }
+        stream_part->init(totalX, totalY, dx, dy, MPI_SHORT, *((short *)stream_rst.getNodata()));
+        stream_rst.read(xstart, ystart, ny, nx, stream_part->getGridPointer());
+        // read parameters data into partition
         int env_num = envfs.size();
         linearpart<float> *env_parts = new linearpart<float>[env_num];
         for (int num = 0; num < env_num; num++)
@@ -140,14 +151,16 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
         /*!
          * Map to store the nodes of upstream inflow cells
          * key is index of cell, i.e., row * nRows + col
+         * value is the vector of indexes of all upstream cells
          */
-        map<int, vector<node> > upCellRC_map;
+        map<int, vector<int> > upCellRC_map;
         bool finished_flag = false;
         int i, j, in, jn, k, cellidx, cellidx_n;
         int ig, jg, ing, jng; // global row and col
-        short tempNeighbor;
+        short tempNeighbor, tmpstream;
         short fd8; // d8 flow direction
         float angle; // dinf flow direction
+        bool no_stream, no_stream_n;
         while (!finished_flag) {
             while (!que.empty())
             {
@@ -156,13 +169,13 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
                 que.pop();
                 i = temp.x;  // col
                 j = temp.y;  // row
-                cout << "remain que num: " << que.size() << ", current x: " << i << ", y: " << j << 
-                    ", upCellRC_map: " << upCellRC_map.size() << endl;
-                fdir_part->localToGlobal(i, j, ig, jg);
-                cellidx = ig + jg * totalY;
+                //cout << "remain que num: " << que.size() << ", current x: " << i << ", y: " << j << 
+                //    ", upCellRC_map: " << upCellRC_map.size() << endl;
                 if (!fdir_part->hasAccess(i, j) || fdir_part->isNodata(i, j)) {
                     continue;
                 }
+                fdir_part->localToGlobal(i, j, ig, jg);
+                cellidx = ig + jg * totalY;
                 // Evaluate up slope inflow cells
                 for (k = 1; k <= 8; k ++) {
                     in = i + d1[k];
@@ -188,25 +201,34 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
                             continue;
                         }
                     }
-
-                    vector<node> tmp_node_vec;
-                    node node_n;
-                    node_n.x = in;
-                    node_n.y = jn;
-                    if (upCellRC_map.find(cellidx_n) == upCellRC_map.end()) {
-                        tmp_node_vec.push_back(node_n);
-                        upCellRC_map.insert(make_pair(cellidx_n, tmp_node_vec));
+                    vector<int> tmp_index_vec;
+                    // exclude stream data
+                    stream_part->getData(in, jn, tmpstream);
+                    no_stream_n = tmpstream <= 0 || stream_part->isNodata(in, jn);
+                    if (no_stream_n) {
+                        if (upCellRC_map.find(cellidx_n) == upCellRC_map.end()) {
+                            tmp_index_vec.push_back(cellidx_n);
+                            upCellRC_map.insert(make_pair(cellidx_n, tmp_index_vec));
+                        }
+                        else {
+                            upCellRC_map.at(cellidx_n).push_back(cellidx_n);
+                        }
                     }
-                    else {
-                        upCellRC_map.at(cellidx_n).push_back(node_n);
-                    }
-                    if (upCellRC_map.find(cellidx) == upCellRC_map.end()) {
-                        vector<node> tmp_nodes;
-                        upCellRC_map.insert(make_pair(cellidx, tmp_nodes));
-                    }
-                    vector<node> upnodes = upCellRC_map.at(cellidx_n);
-                    for (vector<node>::iterator it = upnodes.begin(); it != upnodes.end(); it++) {
-                        upCellRC_map.at(cellidx).push_back(*it);
+                    // exclude stream data
+                    stream_part->getData(i, j, tmpstream);
+                    no_stream = tmpstream <= 0 || stream_part->isNodata(i, j);
+                    if (no_stream) {
+                        if (upCellRC_map.find(cellidx) == upCellRC_map.end()) {
+                            vector<int> tmp_indexes;
+                            upCellRC_map.insert(make_pair(cellidx, tmp_indexes));
+                        }
+                        if (no_stream_n) {
+                            vector<int> upindexes = upCellRC_map.at(cellidx_n);
+                            for (vector<int>::iterator it = upindexes.begin(); it != upindexes.end(); it++) {
+                                upCellRC_map.at(cellidx).push_back(*it);
+                            }
+                            vector<int>(upCellRC_map.at(cellidx)).swap(upCellRC_map.at(cellidx));
+                        }
                     }
                 }
                 // End evaluate up slope inflow cells
@@ -258,23 +280,20 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
         }
         int maxidx = 0;
         int maxcount = 0;
-        for (map<int, vector<node> >::iterator it = upCellRC_map.begin(); it != upCellRC_map.end(); it++) {
-            node cur_node;
-            cur_node.x = it->first % totalY;
-            cur_node.y = it->first / totalY;
-            if (find(it->second.begin(), it->second.end(), cur_node) == it->second.end()) {
-                it->second.push_back(cur_node);
+        for (map<int, vector<int> >::iterator it = upCellRC_map.begin(); it != upCellRC_map.end(); it++) {
+            if (find(it->second.begin(), it->second.end(), it->first) == it->second.end()) {
+                it->second.push_back(it->first);
             }
             if (it->second.size() > maxcount) {
                 maxcount = it->second.size();
                 maxidx = it->first;
             }
         }
-        vector<node> maxupcells = upCellRC_map.at(maxidx);
+        vector<int> maxupcells = upCellRC_map.at(maxidx);
         cout << "Total cells with inflow cells: " << upCellRC_map.size() << endl;
         cout << "The maximum inflow cells number is: " << maxcount << endl;
-        for (vector<node>::iterator it = maxupcells.begin(); it != maxupcells.end(); it++) {
-            pred_part->setData(it->x, it->y, 1.f);
+        for (vector<int>::iterator it = maxupcells.begin(); it != maxupcells.end(); it++) {
+            pred_part->setData(*it % totalY, *it / totalY, 1.f);
         }
         for (j = 0; j < ny; j++) // rows
         {
@@ -314,6 +333,7 @@ int predict_point_sfd(int fdmodel, char * flowdirf, vector<string> envfs, char *
 
         /// free memory
         delete fdir_part;
+        delete stream_part;
         delete[] env_parts;
         if (NULL != pred_part) delete pred_part;
     }
@@ -670,38 +690,39 @@ int predict_point_sfd_serial(string demPath, string sfdPath, vector<string> envi
 
 int main(int argc, char *argv[]){
     GDALAllRegister();
-    if (argc < 10) {
-        cout << "Input error, at least 9 parameters are required!" << endl;
+    if (argc < 11) {
+        cout << "Input error, at least 10 parameters are required!" << endl;
     }
     int flowdir_model = atoi(argv[1]);
     char *flowDirectionPath = argv[2];
-    char *environLyrsPath = argv[3];
-    char *trainSamplePath = argv[4];
-    char *xName = argv[5];
-    char *yName = argv[6];
-    char *propertyName = argv[7];
-    int envN = atoi(argv[8]);
+    char *streamPath = argv[3];
+    char *environLyrsPath = argv[4];
+    char *trainSamplePath = argv[5];
+    char *xName = argv[6];
+    char *yName = argv[7];
+    char *propertyName = argv[8];
+    int envN = atoi(argv[9]);
     /*
      * 0 - predict the whole study area
      * 1 - predict the validation point only
      * 2 - both 0 and 1
      */
-    int outType = atoi(argv[9]);
+    int outType = atoi(argv[10]);
     char *validationSamplePath = NULL;
     char *outPath = NULL;
     if (outType == 0) {
-        outPath = argv[10];
+        outPath = argv[11];
     }
     else if (outType == 1) {
-        validationSamplePath = argv[10];
+        validationSamplePath = argv[11];
     }
     else if (outType == 2) {
         if (argc < 11) {
             cout << "Validation sample file and the output path "
                 "are both required when outType is 2." << endl;
         }
-        validationSamplePath = argv[10];
-        outPath = argv[11];
+        validationSamplePath = argv[11];
+        outPath = argv[12];
     }
     else {
         cout << "outType must be 0, 1, or 2!" << endl;
@@ -712,6 +733,7 @@ int main(int argc, char *argv[]){
     if (flowdir_model == 0) cout << "D8 ";
     else if (flowdir_model == 1) cout << "Dinf ";
     cout << "Flow Direction: " << flowDirectionPath << endl;
+    cout << "Stream: " << streamPath << endl;
     cout << "Environment variables: " << endl;
     for (vector<string>::iterator it = environLyrs.begin(); it != environLyrs.end(); it++) {
         cout << "    " << *it << endl;
@@ -723,6 +745,7 @@ int main(int argc, char *argv[]){
     if (NULL != outPath)
         cout << "Output prediction: " << outPath << endl;
 
-    predict_point_sfd(flowdir_model, flowDirectionPath, environLyrs, trainSamplePath, xName, yName,
-        propertyName, envN, outType, validationSamplePath, outPath);
+    predict_point_sfd(flowdir_model, flowDirectionPath, streamPath, environLyrs,
+        trainSamplePath, xName, yName,propertyName, envN, outType,
+        validationSamplePath, outPath);
 }
