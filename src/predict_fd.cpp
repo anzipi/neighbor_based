@@ -108,7 +108,7 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
             tiffIO paramsf(string_to_char(envfs[num]), FLOAT_TYPE);
             if (!fdir_rst->compareTiff(paramsf))
             {
-                printf("File size do not match\n%s\n", envfs[num]);
+                cout<< "File size do not match " << envfs[num] << endl;
                 MPI_Abort(MCW, 5);
                 return 1;
             }

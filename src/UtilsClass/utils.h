@@ -76,15 +76,15 @@ using namespace std;
 //#define NODATA_VALUE    -9999.0f
 //#endif /* NODATA_VALUE */
 const float NODATA_VALUE = -9999.f;
-//const float MISSINGFLOAT = -1 * FLT_MAX;
-const float MAXIMUMFLOAT = FLT_MAX;
-const int   PATH_MAX = 1024;
+const float MINFLOAT = -1 * FLT_MAX;
+const float MAXFLOAT = FLT_MAX;
+const int   PATH_MAX_LEN = 1024;
 const float UTIL_ZERO = 1.e-6f;
 const float MINI_SLOPE = 0.0001f;
 //const float PI = 3.14159265358979323846f;
-//#ifndef PATH_MAX
-//#define PATH_MAX 1024
-//#endif /* PATH_MAX */
+//#ifndef PATH_MAX_LEN
+//#define PATH_MAX_LEN 1024
+//#endif /* PATH_MAX_LEN */
 ///**
 // * \def ZERO
 // * \brief zero value used in numeric calculation
@@ -810,8 +810,8 @@ T utilsMath::Sum(int row, int *&idx, const T *data) {
 template<typename T>
 void utilsMath::basicStatistics(const T *values, int num, double **derivedvalues, T exclude /* = (T) NODATA_VALUE */) {
     double *tmpstats = new double[6];
-    double maxv = MISSINGFLOAT;
-    double minv = MAXIMUMFLOAT;
+    double maxv = MINFLOAT;
+    double minv = MAXFLOAT;
     int validnum = 0;
     double sumv = 0.;
     double std = 0.;
@@ -849,8 +849,8 @@ utilsMath::basicStatistics(const T * const *values, int num, int lyrs, double **
     for (int j = 0; j < lyrs ; j++) {
         tmpstats[0][j] = 0.;                   /// valid number
         tmpstats[1][j] = 0.;                   /// mean
-        tmpstats[2][j] = (double)MISSINGFLOAT; /// maximum
-        tmpstats[3][j] = (double)MAXIMUMFLOAT; /// minimum
+        tmpstats[2][j] = (double)MINFLOAT; /// maximum
+        tmpstats[3][j] = (double)MAXFLOAT; /// minimum
         tmpstats[4][j] = 0.;                   /// std
         tmpstats[5][j] = 0.;                   /// range
     }

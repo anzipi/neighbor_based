@@ -558,8 +558,8 @@ bool utilsFileIO::CleanDirectory(const string& dirpath) {
 string utilsFileIO::GetAppPath() {
     string RootPath;
 #ifdef windows
-    TCHAR buffer[PATH_MAX];
-    GetModuleFileName(NULL, buffer, PATH_MAX);
+    TCHAR buffer[PATH_MAX_LEN];
+    GetModuleFileName(NULL, buffer, PATH_MAX_LEN);
     RootPath = string((char *) buffer);
 #elif (defined macos) || (defined macosold)
     /// http://stackoverflow.com/a/8149380/4837280
@@ -576,9 +576,9 @@ string utilsFileIO::GetAppPath() {
     }
     RootPath = pathbuf;
 #else /* other linux/unix-like OS */
-    static char buf[PATH_MAX];
-    int rslt = readlink("/proc/self/exe", buf, PATH_MAX);
-    if (rslt < 0 || rslt >= PATH_MAX) {
+    static char buf[PATH_MAX_LEN];
+    int rslt = readlink("/proc/self/exe", buf, PATH_MAX_LEN);
+    if (rslt < 0 || rslt >= PATH_MAX_LEN) {
         buf[0] = '\0';
     } else {
         buf[rslt] = '\0';
