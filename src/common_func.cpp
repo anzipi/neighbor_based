@@ -125,6 +125,18 @@ void readSamples(char* samplePath, string xName, string yName, string propertyNa
 		//cout << "read sampefiles finished" << endl;	
 }
 
+void writeSampleFile(char *samplePath, double *observed, float *estimated, float *uncertainty, int num_test){
+    ofstream fin(samplePath); 
+    if(!fin){
+        cout << "Unable to open outfile"<<endl;// terminate with error
+    }
+    fin << "ID,observed Value,estimated Value,Uncertainty" << endl;
+    for(int test = 0; test < num_test; test++){
+        fin << test << "," << observed[test] <<","<< estimated[test] << "," << uncertainty[test]<< endl;
+    }		
+    fin.close();
+}
+
 //void getExtremeEnv(vector<float> env, float &minValue, float &maxValue){
 //	int neighborSize = env.size();
 //	for(int n = 0; n < neighborSize; n++){

@@ -50,6 +50,8 @@ T getMaxValue(T* similarity, int length, T noData) {
 
 void readSamples(char* samplePath, string xName, string yName, string propertyName,
 	vector<double> & xSamples, vector<double> & ySamples, vector<double> & attrSample);
+void writeSampleFile(char *samplePath, double *observed, float *estimated,
+    float *uncertainty, int num_test);
 //void getExtremeEnv(vector<float> env, float &minValue, float &maxValue);
 void frequencySta(float minValue, float maxValue, int freqnum, vector<float> neighborEnv,
 	float * &frequency);
