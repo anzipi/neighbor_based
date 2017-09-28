@@ -359,9 +359,9 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
             }
             //cur_cell->printFrequency();
         }
-        for (i = 0; i < num_train; i++) {
-            cout << train_idx[i] << ": " << cells_map.at(train_idx[i])->getAttribute() << endl;
-        }
+        //for (i = 0; i < num_train; i++) {
+        //    cout << train_idx[i] << ": " << cells_map.at(train_idx[i])->getAttribute() << endl;
+        //}
 
         tdpartition *pred_part = NULL;
         tdpartition *uncer_part = NULL;
@@ -372,6 +372,7 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
             //calculate predictive value for pred_part
             pred_part = CreateNewPartition(FLOAT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
             uncer_part = CreateNewPartition(FLOAT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
+
             for (int j = 0; j < ny; j++){ // row
                 for (int i = 0; i < nx; i++){ // col
                     int iglob, jglob;
@@ -381,10 +382,7 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
                         continue;
                     }
                     Cell *cur_cell = cells_map.at(pixel_idx);
-                    if (pixel_idx == 46619) {
-                        ;
-                    }
-                    cout << rank << ": " << pixel_idx << ": ";
+                    //cout << rank << ": " << pixel_idx << ": ";
                     bool istrain = false;
                     for (k = 0; k < num_train; k++) {
                         if (train_idx[k] == pixel_idx) {
@@ -398,7 +396,7 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
                     }
                     pred_part->setData(i, j, cur_cell->getAttribute());
                     uncer_part->setData(i, j, cur_cell->getUnCertainty());
-                    cout << cur_cell->getAttribute() << ", " << cur_cell->getUnCertainty() << endl;
+                    //cout << cur_cell->getAttribute() << ", " << cur_cell->getUnCertainty() << endl;
                 }
             }
         }

@@ -30,6 +30,7 @@ void Cell::addEnvValue(vector<float>& envvs) {
     m_envNum = m_envValues.size();
 }
 void Cell::getUpCellIndexes(vector<int>& up_indexes) {
+    //cout << m_globalIndex << endl;
     up_indexes.push_back(m_globalIndex);
     deque<Cell*> que;
     if (!m_upCells.empty())
@@ -45,6 +46,7 @@ void Cell::getUpCellIndexes(vector<int>& up_indexes) {
     }
     while (!que.empty()) {
         Cell *temp = que.front();
+        //cout << temp->globalIndex() << endl;
         que.pop_front();
         if (find(up_indexes.begin(), up_indexes.end(), temp->globalIndex()) == up_indexes.end()) {
             up_indexes.push_back(temp->globalIndex());
@@ -59,7 +61,9 @@ void Cell::getUpCellIndexes(vector<int>& up_indexes) {
             }
             else {
                 if (find(que.begin(), que.end(), *it) == que.end()) {
-                    que.push_back(*it);
+                    if (find(up_indexes.begin(), up_indexes.end(), (*it)->globalIndex()) == up_indexes.end()) {
+                        que.push_back(*it);
+                    }
                 }
             }
         }
@@ -69,7 +73,7 @@ void Cell::getUpCellIndexes(vector<int>& up_indexes) {
 bool Cell::frequencyStats(map<int, Cell*>& cellmap, int envnum, float* minv, float* maxv, int interval_num) {
     vector<int> cur_upIdxes;
     getUpCellIndexes(cur_upIdxes);
-    cout << "upflow num: " << cur_upIdxes.size() << endl;
+    //cout << "upflow num: " << cur_upIdxes.size() << endl;
     m_intervalNum = interval_num;
     if (m_envNum != envnum) {
         cout << "The input env num " << envnum << " should be " << m_envNum << endl;
