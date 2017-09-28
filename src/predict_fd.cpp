@@ -353,12 +353,9 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 			for (int train = 0; train < num_train; train++){
 				int row, col;
 				fdir_rst->geoToGlobalXY(xTrain[train], yTrain[train], col, row);
-
 				row_train.push_back(row);
 				col_train.push_back(col);
 			}
-			vector<double>().swap(xTrain);
-			vector<double>().swap(yTrain);
 			cout << "============= Read training samples finished =============" << endl;
 		}
 		MPI_Bcast(&num_train, 1, MPI_INT, 0, MCW);
@@ -369,22 +366,27 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 		float * minEnv = new float [env_num];
 		float * maxEnv = new float [env_num];
 		for(int kk = 0; kk < env_num; kk++){
-			float maxEnv_rank= 0;
-			float minEnv_rank = 1000000;
-			vector<float> env;
+            minEnv[kk] = MAXFLOAT;
+            maxEnv[kk] = MINFLOAT;
 			for(int i = 0; i < nx; i++){
 				for(int j = 0; j < ny; j++){
+                    if (env_parts[kk].isNodata(i, j)) continue;
 					float tmp_env = env_parts[kk].getData(i, j, tmp_env);
-					env.push_back(tmp_env);
-
+                    if (minEnv[kk] > tmp_env){
+                        minEnv[kk] = tmp_env;
+                    }
+                    if (maxEnv[kk] < tmp_env){
+                        maxEnv[kk] = tmp_env;
+                    }
 				}
 			}
-			getExtremeEnv(env, minEnv_rank, maxEnv_rank);
-			cout <<"Env No:" << kk << ", " << minEnv_rank << ", " << maxEnv_rank << endl;
-			MPI_Allreduce(&minEnv_rank, &minEnv[kk], 1, MPI_FLOAT, MPI_MIN, MCW);
-			MPI_Allreduce(&maxEnv_rank, &maxEnv[kk], 1, MPI_FLOAT, MPI_MAX, MCW);
-			cout << minEnv[kk] << ", " << maxEnv[kk] << endl;
+            cout << "Env No:" << kk << ", " << minEnv[kk] << ", " << maxEnv[kk] << endl;
 		}
+        for (int kk = 0; kk < env_num; kk++){
+            MPI_Allreduce(&minEnv[kk], &minEnv[kk], 1, MPI_FLOAT, MPI_MIN, MCW);
+            MPI_Allreduce(&maxEnv[kk], &maxEnv[kk], 1, MPI_FLOAT, MPI_MAX, MCW);
+            cout << minEnv[kk] << ", " << maxEnv[kk] << endl;
+        }
 		cout << "============= get max and min value for each env layer finished =============" << endl;
 		
 		
