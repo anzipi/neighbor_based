@@ -58,22 +58,6 @@ float getSimilaityIntegration(float * similarity, int numOfLyr, double noData){
 		}
 	}
 	return min;
-}	
-
-float getMaxValue(float* similarity, int length, float noData){
-	float max = 0;
-	int cnt = 0;
-	for(int l = 0; l < length; l++){
-		if(max < similarity[l]){
-			max = similarity[l];
-		}else if(abs(similarity[l] - noData) < VERY_SMALL){
-			cnt++;
-		}
-	}
-	if(cnt == length)
-		return noData;
-	else
-		return max;
 }
 
 double getEnvRange(int totalRows, int totalCols, double**env, double noData){
@@ -141,18 +125,18 @@ void readSamples(char* samplePath, string xName, string yName, string propertyNa
 		//cout << "read sampefiles finished" << endl;	
 }
 
-void getExtremeEnv(vector<float> env, float &minValue, float &maxValue){
-	int neighborSize = env.size();
-	for(int n = 0; n < neighborSize; n++){
-		if(minValue > env[n]){
-			minValue = env[n];
-		}
-		if(maxValue < env[n]){
-			maxValue = env[n];
-		}
-
-	}
-}
+//void getExtremeEnv(vector<float> env, float &minValue, float &maxValue){
+//	int neighborSize = env.size();
+//	for(int n = 0; n < neighborSize; n++){
+//		if(minValue > env[n]){
+//			minValue = env[n];
+//		}
+//		if(maxValue < env[n]){
+//			maxValue = env[n];
+//		}
+//
+//	}
+//}
 
 void frequencySta(float minValue, float maxValue, int freqnum, vector<float> neighborEnv, float * &frequency){
 	int neighborSize = neighborEnv.size();
@@ -186,69 +170,66 @@ float histSimilarity(float * & frequencyPixel, float * & frequencySample, int nu
 	return similarityH;
 }
 
-void predictProperty(tdpartition * pred_part, tdpartition *uncer_part, int nx, int ny, 
-	map<int, Cell*> cells_map, float *** frequencyTrain, float *minEnv, float *maxEnv, 
-	vector<double> attrs_train, int env_num, int freqnum, int num_train){
-	for(int j = 0; j < ny; j++){
-		for(int i = 0; i < nx; i++){
-			int pixel_idx = j * nx + i;
-			map<int ,Cell*>::iterator iter;
-			iter = cells_map.find(pixel_idx);
-			if(iter != cells_map.end()){
-				Cell* pixel_cell = cells_map.at(pixel_idx);
-				vector<int> pixel_upIdxes;
-				pixel_cell->getUpCellIndexes(pixel_upIdxes);
-				map<int, vector<float> > pixel_upEnvValues;
-				for (int kk = 0; kk < env_num; kk++) {
-					vector<float> tmpvalues;
-					pixel_upEnvValues.insert(make_pair(kk, tmpvalues));
-				}
-				for (vector<int>::iterator it = pixel_upIdxes.begin(); it != pixel_upIdxes.end(); it++) {
-					vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
-					if (tmpEnvvs.size() != env_num) {
-						continue; // although this may not happen, just check.
-					}
-					for (int kk = 0; kk < env_num; kk++) {
-						pixel_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);						
-					}
-				}			
-				
-				float ** frequency = new float *[env_num];
-				for(int kk = 0; kk < env_num; kk++){
-					frequency[kk] = new float[freqnum];
-					for(int n = 0; n < freqnum; n++){
-						frequency[kk][n] = 0;
-					}
-				}
-				for(int kk = 0; kk < env_num; kk++){
-					frequency[kk] = new float[freqnum];
-					frequencySta(minEnv[kk], maxEnv[kk], freqnum, pixel_upEnvValues.at(kk), frequency[kk]);					
-				}
-				float *sampleSimilarity = new float[num_train];
-				for(int train = 0; train < num_train; train ++){
-					float * envSimilarity = new float[env_num];
-					for(int kk = 0; kk < env_num; kk++){
-						envSimilarity[kk] = histSimilarity(frequency[kk], frequencyTrain[train][kk], freqnum);
-					}
-					sampleSimilarity[train] = getSimilaityIntegration(envSimilarity, env_num, NODATA_VALUE);
-				}
-				float maxSimilarity = getMaxValue(sampleSimilarity, num_train, NODATA_VALUE);
-				float uncertainty = 1 -maxSimilarity;
-				float sumPredSimilarity = 0, sumSimilarity = 0;
-				for(int train = 0; train < num_train; train ++){
-					sumPredSimilarity += attrs_train[train] * sampleSimilarity[train];
-					sumSimilarity += sampleSimilarity[train];
-				}
-				float pred = sumPredSimilarity / sumSimilarity;
-				pred_part->setData(i, j, pred);
-				uncer_part->setData(i, j, uncertainty);
-			}else{
-				pred_part->setData(i, j, NODATA_VALUE);
-				uncer_part->setData(i, j, NODATA_VALUE);
-			}
-
-			
-		}
-
-	}
-}
+//void predictProperty(tdpartition * pred_part, tdpartition *uncer_part, int nx, int ny, 
+//	map<int, Cell*> cells_map, float *** frequencyTrain, float *minEnv, float *maxEnv, 
+//	vector<double> attrs_train, int env_num, int freqnum, int num_train){
+//	for(int j = 0; j < ny; j++){
+//		for(int i = 0; i < nx; i++){
+//			int pixel_idx = j * nx + i;
+//			map<int ,Cell*>::iterator iter;
+//			iter = cells_map.find(pixel_idx);
+//			if(iter != cells_map.end()){
+//				Cell* pixel_cell = cells_map.at(pixel_idx);
+//				vector<int> pixel_upIdxes;
+//				pixel_cell->getUpCellIndexes(pixel_upIdxes);
+//				map<int, vector<float> > pixel_upEnvValues;
+//				for (int kk = 0; kk < env_num; kk++) {
+//					vector<float> tmpvalues;
+//					pixel_upEnvValues.insert(make_pair(kk, tmpvalues));
+//				}
+//				for (vector<int>::iterator it = pixel_upIdxes.begin(); it != pixel_upIdxes.end(); it++) {
+//					vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
+//					if (tmpEnvvs.size() != env_num) {
+//						continue; // although this may not happen, just check.
+//					}
+//					for (int kk = 0; kk < env_num; kk++) {
+//						pixel_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);						
+//					}
+//				}			
+//				
+//				float ** frequency = new float *[env_num];
+//				for(int kk = 0; kk < env_num; kk++){
+//					frequency[kk] = new float[freqnum];
+//					for(int n = 0; n < freqnum; n++){
+//						frequency[kk][n] = 0;
+//					}
+//				}
+//				for(int kk = 0; kk < env_num; kk++){
+//					frequency[kk] = new float[freqnum];
+//					frequencySta(minEnv[kk], maxEnv[kk], freqnum, pixel_upEnvValues.at(kk), frequency[kk]);					
+//				}
+//				float *sampleSimilarity = new float[num_train];
+//				for(int train = 0; train < num_train; train ++){
+//					float * envSimilarity = new float[env_num];
+//					for(int kk = 0; kk < env_num; kk++){
+//						envSimilarity[kk] = histSimilarity(frequency[kk], frequencyTrain[train][kk], freqnum);
+//					}
+//					sampleSimilarity[train] = getSimilaityIntegration(envSimilarity, env_num, NODATA_VALUE);
+//				}
+//				float maxSimilarity = getMaxValue(sampleSimilarity, num_train, NODATA_VALUE);
+//				float uncertainty = 1 -maxSimilarity;
+//				float sumPredSimilarity = 0, sumSimilarity = 0;
+//				for(int train = 0; train < num_train; train ++){
+//					sumPredSimilarity += attrs_train[train] * sampleSimilarity[train];
+//					sumSimilarity += sampleSimilarity[train];
+//				}
+//				float pred = sumPredSimilarity / sumSimilarity;
+//				pred_part->setData(i, j, pred);
+//				uncer_part->setData(i, j, uncertainty);
+//			}else{
+//				pred_part->setData(i, j, NODATA_VALUE);
+//				uncer_part->setData(i, j, NODATA_VALUE);
+//			}
+//		}
+//	}
+//}

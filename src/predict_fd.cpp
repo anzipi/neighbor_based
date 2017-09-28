@@ -16,7 +16,6 @@
 #include "utilities.h" // from UtilsClass of Lries-2415
 
 // 4. Include other header files of current project if existed.
-#include "AscGrid.h"
 //#include "flowInCells.h"
 #include "common_func.h"
 #include "sfdRegionSimilarity.h"
@@ -55,19 +54,40 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
         MPI_Comm_size(MCW, &size);
         if (rank == 0) {
             cout << endl;
-            cout << "Neighbor-based prediction method by flow direction model. Version 1.1" << endl;
-            cout << endl;
-            fflush(stdout);
-            if (size > 1) {
-                cout << "At the moment, you can only use '-n 1' or not use mpiexec!" << endl;
-                MPI_Abort(MCW, 1);
-                return 1;
+            cout << "Neighbor-based prediction method by flow direction model. Version 1.2" << endl;
+            cout << endl << "INPUT SUMMARY: " << endl;
+            if (fdmodel == 0) cout << "D8 ";
+            else if (fdmodel == 1) cout << "Dinf ";
+            cout << "Flow Direction: " << flowdirf << endl;
+            cout << "Stream: " << streamf << endl;
+            cout << "Environment variables: " << endl;
+            for (vector<string>::iterator it = envfs.begin(); it != envfs.end(); it++) {
+                cout << "    " << *it << endl;
             }
+            cout << "Training samples path: " << trainf << endl;
+            cout << "XName: " << xname << ", YName: " << yname << ", Property: " << attrname << endl;
+            if (NULL != validf)
+                cout << "Validation samples path: " << validf << endl;
+            if (NULL != predf)
+                cout << "Output prediction: " << predf << endl;
+            if (NULL != uncerf)
+                cout << "Output uncertainty: " << uncerf << endl;
+            fflush(stdout);
+            //if (size > 1) {
+            //    cout << "At the moment, you can only use '-n 1' or not use mpiexec!" << endl;
+            //    MPI_Abort(MCW, 1);
+            //    return 1;
+            //}
         }
         // begin timer
         double begint = MPI_Wtime();
         // read tiff header information using tiffIO from flow direction
         tiffIO *fdir_rst = NULL;
+        if (!FileExists(flowdirf)){
+            printf("File not existed!\n%s\n", flowdirf);
+            MPI_Abort(MCW, 5);
+            return 1;
+        }
         if (fdmodel == 0) {
             fdir_rst = new tiffIO(flowdirf, SHORT_TYPE);
         } else if (fdmodel == 1) {
@@ -94,6 +114,11 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 
         // read stream data into partition
         linearpart<short> *stream_part = new linearpart<short>;
+        if (!FileExists(streamf)){
+            printf("File not existed!\n%s\n", streamf);
+            MPI_Abort(MCW, 5);
+            return 1;
+        }
         tiffIO stream_rst(streamf, SHORT_TYPE);
         if (!fdir_rst->compareTiff(stream_rst))
         {
@@ -108,6 +133,11 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
         linearpart<float> *env_parts = new linearpart<float>[env_num];
         for(int num = 0; num < env_num; num++)
         {
+            if (!FileExists(envfs[num])){
+                cout << "File not existed: " << envfs[num] << endl;
+                MPI_Abort(MCW, 5);
+                return 1;
+            }
             tiffIO paramsf(string_to_char(envfs[num]), FLOAT_TYPE);
             if (!fdir_rst->compareTiff(paramsf))
             {
@@ -120,354 +150,262 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
         }
         double readt = MPI_Wtime(); // record reading time
 
-        
-
         // COMPUTING CODE BLOCK
-        if (rank == 0) cout << "=============  Initial cells without inflow  =============" << endl;
-        tdpartition *neighbor;
-        neighbor = CreateNewPartition(SHORT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
-        // share information between ranks and set borders to zero
-        fdir_part->share();
-        neighbor->clearBorders();
-        node temp;
-        queue<node> que;
-        int useOutlets = 0;
-        long numOutlets = 0;
-        int *outletsX = 0, *outletsY = 0;
-        //Count the flow receiving neighbors and put node with no contributing neighbors on que
-        if (fdmodel == 0) {
-            initNeighborD8up(neighbor, fdir_part, &que, nx, ny, useOutlets, outletsX, outletsY, numOutlets);
-        } else if (fdmodel == 1) {
-            initNeighborDinfup(neighbor, fdir_part, &que, nx, ny, useOutlets, outletsX, outletsY, numOutlets);
-        }
-        int noflowincell_num_part = que.size();
-        int noflowincell_num = 0;
-        MPI_Allreduce(&noflowincell_num_part, &noflowincell_num, 1, MPI_INT, MPI_SUM, MCW);
-        if (rank == 0) {
-            cout << "Initial cells without inflow done, with a count of " << noflowincell_num << endl;
-            cout << "=============  Trace downslope and store upstream cells and variables "
-                "for each cell =============" << endl;
-        }
+        if (rank == 0) cout << "=============  Construct in flow relationships  =============" << endl;
         /*!
-         * Map to store the ``Cell`` instance of each cell
-         * key is index of cell, i.e., row * nRows + col
+         * Map of the ``Cell`` instance of each cell in current partition
+         * key is global index of cell, i.e., row * nCols + col => jglobal * totalX + iglobal 
          * value is the ``Cell`` instance
-         */
+        */
         map<int, Cell*> cells_map;
-        int i, j, in, jn, k, cellidx, cellidx_n;
-        int ig, jg, ing, jng; // global row and col
-        short tempNeighbor, tmpstream;
+        /*!
+         * Map of the cell index to position index of global data
+         * key is global index of cell
+         * value is the position index excluding NoData
+         */
+        map<int, int> position_map;
+        int i, j, k, ig, jg;
+        int in, jn;
+        short tmpstream;
         short fd8; // d8 flow direction
         float angle; // dinf flow direction
-        float tmp_env; // temp environment value
-        bool no_stream, no_stream_n;
-        while (!que.empty())
-        {
-            //Takes next node with no contributing neighbors
-            temp = que.front();
-            que.pop();
-            i = temp.x;  // col
-            j = temp.y;  // row
-            //cout << "remain que num: " << que.size() << ", current x: " << i << ", y: " << j << 
-            //    ", upCellRC_map: " << upCellRC_map.size() << endl;
-            if (!fdir_part->hasAccess(i, j) || fdir_part->isNodata(i, j)) {
-                continue;
+
+        vector<int> globIndex_rank;
+        /// get global index of valid cells
+        for (int j = 0; j < ny; j++) { // row
+            for (int i = 0; i < nx; i++) { // col
+                fdir_part->localToGlobal(i, j, ig, jg);
+                int ginx = jg * totalX + ig;
+                // extract valid cells
+                if (!fdir_part->hasAccess(i, j) || fdir_part->isNodata(i, j)) continue;
+                if (!stream_part->hasAccess(i, j) || stream_part->getData(i, j, tmpstream) > 0) continue;
+                bool env_nodata = false;
+                for (k = 0; k < env_num; k++) {
+                    if (!env_parts[k].hasAccess(i, j) || env_parts[k].isNodata(i, j)) {
+                        env_nodata = true;
+                        break;
+                    }
+                }
+                if (env_nodata) continue;
+                globIndex_rank.push_back(ginx);
             }
-            fdir_part->localToGlobal(i, j, ig, jg);
-            cellidx = ig + jg * totalY;
-            // Evaluate up slope inflow cells
-            for (k = 1; k <= 8; k ++) {
-                in = i + d1[k];
-                jn = j + d2[k];
-                fdir_part->localToGlobal(in, jn, ing, jng);
-                cellidx_n = ing + jng * totalY;
-                if (!fdir_part->hasAccess(in, jn) || fdir_part->isNodata(in, jn)) {
-                    continue;
-                }
-                if (fdmodel == 0) {
-                    fdir_part->getData(in, jn, fd8);
-                    if (abs(fd8 - k) != 4) {
-                        continue;
-                    }
-                }
-                else if (fdmodel == 1) {
-                    fdir_part->getData(in, jn, angle);
-                    double p = prop(angle, (k + 4) % 8, dx, dy);
-                    /// this can be a parameter, which means how many inflow water
-                    /// can be seen as the upstream of the current cell.
-                    double thresh = 0.1;
-                    if (p < thresh) {
-                        continue;
-                    }
-                }
-                vector<int> tmp_index_vec;
-                // exclude stream data
-                stream_part->getData(in, jn, tmpstream);
-                no_stream_n = tmpstream <= 0 || stream_part->isNodata(in, jn);
-                if (no_stream_n) {
-                    if (cells_map.find(cellidx_n) == cells_map.end()) {
-                        Cell* cur_cell = new Cell(cellidx_n);
-                        for (int kk = 0; kk < env_num; kk++) {
-                            cur_cell->addEnvValue(env_parts[kk].getData(in, jn, tmp_env));
-                        }
-                        cells_map.insert(make_pair(cellidx_n, cur_cell));
-                    }
-                }
-                // exclude stream data
-                stream_part->getData(i, j, tmpstream);
-                no_stream = tmpstream <= 0 || stream_part->isNodata(i, j);
-                if (no_stream) {
-                    if (cells_map.find(cellidx) == cells_map.end()) {
-                        Cell* cur_cell = new Cell(cellidx);
-                        for (int kk = 0; kk < env_num; kk++) {
-                            cur_cell->addEnvValue(env_parts[kk].getData(i, j, tmp_env));
-                        }
-                        cells_map.insert(make_pair(cellidx, cur_cell));
-                    }
-                    if (no_stream_n) {
-                        cells_map.at(cellidx)->addUpCell(cells_map.at(cellidx_n));
-                    }
-                }
-            }
-            // End evaluate up slope inflow cells
-            // check and push to que the newest cells without inflow
+        }
+        vector<int>(globIndex_rank).swap(globIndex_rank);
+        int validCellNum_rank = globIndex_rank.size();
+
+        // create arrays need to be sent and gathered.
+        int *globIndex_ra = new int[validCellNum_rank];
+        float *flowdir_ra = new float[validCellNum_rank];
+        float **env_ra = new float*[env_num];
+        for (k = 0; k < env_num; k++) {
+            env_ra[k] = new float[validCellNum_rank];
+        }
+        float * minEnv = new float[env_num];
+        float * maxEnv = new float[env_num];
+        for (k = 0; k < env_num; k++){
+            minEnv[k] = MAXFLOAT;
+            maxEnv[k] = MINFLOAT;
+        }
+        for (i = 0; i < validCellNum_rank; i++) {
+            globIndex_ra[i] = globIndex_rank[i];
+            int cur_ig = globIndex_ra[i] % totalX;
+            int cur_jg = globIndex_ra[i] / totalX;
+            int cur_il, cur_jl;
+            fdir_part->globalToLocal(cur_ig, cur_jg, cur_il, cur_jl);
             if (fdmodel == 0) {
-                fdir_part->getData(i, j, fd8);
-                in = i + d1[fd8];
-                jn = j + d2[fd8];
-                neighbor->addToData(in, jn, (short)-1);
-                if (fdir_part->isInPartition(in, jn) && neighbor->getData(in, jn, tempNeighbor) == 0) {
-                    temp.x = in;
-                    temp.y = jn;
-                    que.push(temp);
-                }
+                fdir_part->getData(cur_il, cur_jl, fd8);
+                flowdir_ra[i] = (float)fd8;
             } 
-            else {
-                fdir_part->getData(i, j, angle);
+            else if (fdmodel == 1) {
+                fdir_part->getData(cur_il, cur_jl, flowdir_ra[i]);
+            }
+            for (k = 0; k < env_num; k++) {
+                env_parts[k].getData(cur_il, cur_jl, env_ra[k][i]);
+                if (minEnv[k] > env_ra[k][i]){
+                    minEnv[k] = env_ra[k][i];
+                }
+                if (maxEnv[k] < env_ra[k][i]){
+                    maxEnv[k] = env_ra[k][i];
+                }
+            }
+        }
+        for (k = 0; k < env_num; k++){
+            MPI_Allreduce(MPI_IN_PLACE, &minEnv[k], 1, MPI_FLOAT, MPI_MIN, MCW);
+            MPI_Allreduce(MPI_IN_PLACE, &maxEnv[k], 1, MPI_FLOAT, MPI_MAX, MCW);
+            //cout << "Env No:" << k << ", " << minEnv[k] << ", " << maxEnv[k] << endl;
+        }
+
+        int *localCellCount = new int[size]; /// cell numbers in each partition
+        int validCellNum_all;
+        MPI_Allreduce(&validCellNum_rank, &validCellNum_all, 1, MPI_INT, MPI_SUM, MCW);
+        MPI_Allgather(&validCellNum_rank, 1, MPI_INT, localCellCount, 1, MPI_INT, MCW);
+        //cout << "rank: " << rank << ", valid cell: " << validCellNum_rank << ", all: " << validCellNum_all << endl;
+        int *displs = new int[size];
+        displs[0] = 0;
+        for (i = 1; i < size; i++) {
+            displs[i] = displs[i - 1] + localCellCount[i - 1];
+        }
+
+        // create arrays to store data of entire area.
+        int *validCellIndexes = new int[validCellNum_all];
+        int *globIndex_all = new int[validCellNum_all];
+        float *flowdir_all = new float[validCellNum_all];
+        float **env_all = new float*[env_num];
+        for (k = 0; k < env_num; k++) {
+            env_all[k] = new float[validCellNum_all];
+        }
+
+        MPI_Allgatherv(globIndex_ra, validCellNum_rank, MPI_INT, validCellIndexes, localCellCount, displs, MPI_INT, MCW);
+        MPI_Allgatherv(flowdir_ra, validCellNum_rank, MPI_FLOAT, flowdir_all, localCellCount, displs, MPI_FLOAT, MCW);
+        for (k = 0; k < env_num; k++) {
+            MPI_Allgatherv(env_ra[k], validCellNum_rank, MPI_FLOAT, env_all[k], localCellCount, displs, MPI_FLOAT, MCW);
+        }
+        // release memory on rank
+        globIndex_rank.clear();
+        Release1DArray(globIndex_ra);
+        Release1DArray(flowdir_ra);
+        Release2DArray(env_num, env_ra);
+
+        // Construct cells_map and position_map
+        for (i = 0; i < validCellNum_all; i++) {
+            position_map.insert(make_pair(validCellIndexes[i], i));
+            Cell* curcell = new Cell(validCellIndexes[i], flowdir_all[i]);
+            for (k = 0; k < env_num; k++) {
+                curcell->addEnvValue(env_all[k][i]);
+            }
+            cells_map.insert(make_pair(validCellIndexes[i], curcell));
+        }
+        // Add in flow cells for each cell
+        for (map<int, Cell*>::iterator it = cells_map.begin(); it != cells_map.end(); it++) {
+            int cur_ig = it->first % totalX;
+            int cur_jg = it->first / totalX;
+            if (fdmodel == 0) {
+                int curd8 = (int)it->second->flowDirection();
+                in = cur_ig + d1[curd8];
+                jn = cur_jg + d2[curd8];
+                int cur_idx = jn * totalX + in;
+                if (cells_map.find(cur_idx) == cells_map.end()) continue;
+                cells_map.at(cur_idx)->addUpCell(it->second);
+            } 
+            else if (fdmodel == 1) {
+                angle = it->second->flowDirection();
                 for (k = 1; k <= 8; k++) {
                     double p = prop(angle, k, dx, dy);
-                    if (p < 0.) continue;
-                    in = i + d1[k];
-                    jn = j + d2[k];
-                    neighbor->addToData(in, jn, (short)-1);
-                    if (fdir_part->isInPartition(in, jn) && neighbor->getData(in, jn, tempNeighbor) == 0) {
-                        temp.x = in;
-                        temp.y = jn;
-                        que.push(temp);
-                    }
+                    double thresh = 0.01;
+                    if (p < thresh) continue;
+                    in = cur_ig + d1[k];
+                    jn = cur_jg + d2[k];
+                    int cur_idx = jn * totalX + in;
+                    if (cells_map.find(cur_idx) == cells_map.end()) continue;
+                    cells_map.at(cur_idx)->addUpCell(it->second);
                 }
             }
-            neighbor->addBorders();
-            for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempNeighbor) != 0 && 
-                    neighbor->getData(i, 0, tempNeighbor) == 0) {
-                    temp.x = i;
-                    temp.y = 0;
-                    que.push(temp);
-                }
-                if (neighbor->getData(i, ny, tempNeighbor) != 0 && 
-                    neighbor->getData(i, ny - 1, tempNeighbor) == 0) {
-                    temp.x = i;
-                    temp.y = ny - 1;
-                    que.push(temp);
-                }
-            }
-            neighbor->clearBorders();
         }
-		
-        /******** TEST CODE *********/
-        //int maxidx = 0;
-        //int maxcount = 0;
-        //int count = 0;
-        //for (map<int, Cell* >::iterator it = cells_map.begin(); it != cells_map.end(); it++) {
-        //    if (fdmodel == 0) {
-        //        if (it->second->upCellsCount() > maxcount) {
-        //            maxcount = it->second->upCellsCount();
-        //            maxidx = it->first;
-        //        }
-        //    }
-        //    else if (fdmodel == 1) {
-        //        vector<int> maxupcells;
-        //        it->second->getUpCellIndexes(maxupcells);
-        //        if (maxupcells.size() > maxcount) {
-        //            maxcount = maxupcells.size();
-        //            maxidx = it->first;
-        //        }
-        //        count += 1;
-        //        cout << count << ": " << maxupcells.size() << "; ";
-        //    }
-        //}
-        //cout << "maxidx: " << maxidx << ", maxcount: " << maxcount << endl;
-        //Cell* tmp_cell = cells_map.at(maxidx);
-        //cout << "Total cells with inflow cells: " << cells_map.size() << endl;
-        //vector<int> maxupcells;
-        //tmp_cell->getUpCellIndexes(maxupcells);
-        //cout << "The maximum inflow cells number is: " << maxupcells.size() << endl;
-        //for (vector<int>::iterator it = maxupcells.begin(); it != maxupcells.end(); it++) {
-        //    pred_part->setData(*it % totalY, *it / totalY, 1.f);
-        //}
-       
-        /******** TEST CODE DONE *********/
+        // release memory on rank
+        Release1DArray(globIndex_all);
+        Release1DArray(flowdir_all);
+        Release2DArray(env_num, env_all);
 
-		vector<int> row_train;
-		vector<int> col_train;
-		vector<double> attrs_train;	
-		int num_train = 0;
+        // Read training samples
+        vector<double> attrs_train;	
+        int num_train = 0;
+        int *train_idx;
+        double *train_attrs;
         if (rank == 0) {
-            cout << "============= Read training samples  =============" << endl;				
-			vector<double> xTrain;
-			vector<double> yTrain;
-			readSamples(trainf, xname, yname, attrname, xTrain, yTrain, attrs_train);
-			num_train = xTrain.size();
-			// use fdir_rst->geoToGlobalXY(geox, geoy, row, col); to get the row and col from projected coordinates
-			for (int train = 0; train < num_train; train++){
-				int row, col;
-				fdir_rst->geoToGlobalXY(xTrain[train], yTrain[train], col, row);
-				row_train.push_back(row);
-				col_train.push_back(col);
-			}
-			cout << "============= Read training samples finished =============" << endl;
-		}
-		MPI_Bcast(&num_train, 1, MPI_INT, 0, MCW);
-		MPI_Bcast(&row_train, num_train, MPI_FLOAT, 0, MCW);
-		MPI_Bcast(&col_train, num_train, MPI_FLOAT, 0, MCW);
-		MPI_Bcast(&attrs_train, num_train, MPI_DOUBLE, 0, MCW);
-
-		float * minEnv = new float [env_num];
-		float * maxEnv = new float [env_num];
-		for(int kk = 0; kk < env_num; kk++){
-            minEnv[kk] = MAXFLOAT;
-            maxEnv[kk] = MINFLOAT;
-			for(int i = 0; i < nx; i++){
-				for(int j = 0; j < ny; j++){
-                    if (env_parts[kk].isNodata(i, j)) continue;
-					float tmp_env = env_parts[kk].getData(i, j, tmp_env);
-                    if (minEnv[kk] > tmp_env){
-                        minEnv[kk] = tmp_env;
-                    }
-                    if (maxEnv[kk] < tmp_env){
-                        maxEnv[kk] = tmp_env;
-                    }
-				}
-			}
-            cout << "Env No:" << kk << ", " << minEnv[kk] << ", " << maxEnv[kk] << endl;
-		}
-        for (int kk = 0; kk < env_num; kk++){
-            MPI_Allreduce(&minEnv[kk], &minEnv[kk], 1, MPI_FLOAT, MPI_MIN, MCW);
-            MPI_Allreduce(&maxEnv[kk], &maxEnv[kk], 1, MPI_FLOAT, MPI_MAX, MCW);
-            cout << minEnv[kk] << ", " << maxEnv[kk] << endl;
+            cout << "============= Read training samples  =============" << endl;
+            vector<double> xTrain;
+            vector<double> yTrain;
+            if (!FileExists(trainf)){
+                cout << "File not existed: " << trainf << endl;
+                MPI_Abort(MCW, 5);
+                return 1;
+            }
+            readSamples(trainf, xname, yname, attrname, xTrain, yTrain, attrs_train);
+            num_train = xTrain.size();
+            train_idx = new int[num_train];
+            train_attrs = new double[num_train];
+            for (int train = 0; train < num_train; train++){
+                int row, col;
+                fdir_rst->geoToGlobalXY(xTrain[train], yTrain[train], col, row);
+                int tmpidx = row * totalX + col;
+                if (cells_map.find(tmpidx) == cells_map.end()) {
+                    continue;
+                }
+                train_idx[train] = tmpidx;
+                train_attrs[train] = attrs_train[train];
+            }
+            cout << "============= Read training samples finished =============" << endl;
         }
-		cout << "============= get max and min value for each env layer finished =============" << endl;
-		
-				
-		float *** frequencyTrain = new float**[num_train];
-		for(int train = 0; train < num_train; train++){
-			frequencyTrain[train] = new float *[env_num];
-			for(int kk = 0; kk < env_num; kk++){
-				frequencyTrain[train][kk] = new float [freqnum];
-				for(int n = 0; n < freqnum; n++){
-					frequencyTrain[train][kk][n] = 0;
-				}
-			}
-		}
-		if (rank == 0) {
-			cout << "============= calculate neighborhood feature for training samples  =============" << endl;	
-			for (int train = 0; train < num_train; train++){
-				int cur_index = row_train[train] * totalY + col_train[train];
-				Cell* cur_cell = cells_map.at(cur_index);
-				vector<int> cur_upIdxes;
-				cur_cell->getUpCellIndexes(cur_upIdxes);
-				map<int, vector<float> > cur_upEnvValues;
-				for (int kk = 0; kk < env_num; kk++){
-					vector<float> tmpvalues;
-					cur_upEnvValues.insert(make_pair(kk, tmpvalues));
-				}
-				for (vector<int>::iterator it = cur_upIdxes.begin(); it != cur_upIdxes.end(); it++) {
-					vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
-					if (tmpEnvvs.size() != env_num) {
-						continue; // although this may not happen, just check.
-					}
-					for (int kk = 0; kk < env_num; kk++) {
-						cur_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);
-					}
-				}
-				//这里需要一个函数统计该样点邻域环境变量的频率分布			
-				for(int kk = 0; kk < env_num; kk++){								
-					frequencySta(minEnv[kk], maxEnv[kk], freqnum, cur_upEnvValues.at(kk), frequencyTrain[train][kk]);
-				}
-			}
-		}		
-		cout << "============= calculate neighborhood feature for training samples finished =============" << endl;
-		MPI_Bcast(&frequencyTrain, num_train * env_num * freqnum, MPI_FLOAT, 0, MCW);
+        MPI_Bcast(&num_train, 1, MPI_INT, 0, MCW);
+        if (rank != 0) {
+            train_idx = new int[num_train];
+            train_attrs = new double[num_train];
+        }
+        MPI_Bcast(train_idx, num_train, MPI_INT, 0, MCW);
+        MPI_Bcast(train_attrs, num_train, MPI_DOUBLE, 0, MCW);
 
+        // NOW, each rank (processor) has a some cells_map!
+        if (rank == 0) {
+            cout << "============= calculate neighborhood feature for training samples  =============" << endl;
+        }
+        for (i = 0; i < num_train; i++) {
+            Cell* cur_cell = cells_map.at(train_idx[i]);
+            cur_cell->setAttribute(train_attrs[i]);
+            cur_cell->setUnCertainty(0.);
+            if (!cur_cell->frequencyStats(cells_map, env_num, minEnv, maxEnv, freqnum)) {
+                cout << "Calculate frequency of environment variables failed on " << train_idx[i] << endl;
+                MPI_Abort(MCW, 6);
+                return 1;
+            }
+            //cur_cell->printFrequency();
+        }
+        for (i = 0; i < num_train; i++) {
+            cout << train_idx[i] << ": " << cells_map.at(train_idx[i])->getAttribute() << endl;
+        }
 
-		/*for(int train = 0; train < num_train; train++){
-			for(int kk = 0; kk < env_num; kk++){
-				for(int n = 0; n < freqnum; n++){				
-					cout << train << ", " << kk << ", " << frequencyTrain[train][kk][n] << ", " << endl;
-				}
-				cout << endl;
-			}
-		}	*/
-
-
-		//Get one environmental variables of one cell's upstream cells
-		//int test_idx = 12387;
-		//Cell* test_cell = cells_map.at(test_idx);
-		//vector<int> test_upIdxes;
-		//test_cell->getUpCellIndexes(test_upIdxes);
-		//map<int, vector<float> > test_upEnvValues;
-		//for (int kk = 0; kk < env_num; kk++) {
-		//	vector<float> tmpvalues;
-		//	test_upEnvValues.insert(make_pair(kk, tmpvalues));
-		//}
-		//for (vector<int>::iterator it = test_upIdxes.begin(); it != test_upIdxes.end(); it++) {
-		//	vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
-		//	if (tmpEnvvs.size() != env_num) {
-		//		continue; // although this may not happen, just check.
-		//	}
-		//	for (int kk = 0; kk < env_num; kk++) {
-		//		test_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);
-		//		//cout << test_upEnvValues.at(kk).size() << endl;
-		//	}
-		//}
-		//for (int kk = 0; kk < env_num; kk++) {
-		//	float * frequency = new float[freqnum];
-		//	for(int n = 0; n < freqnum; n++){
-		//		frequency[n] = 0;
-		//	}
-		//	cout << "ENV No.: " << kk << ", " << test_upEnvValues.at(kk).size() << endl;
-		//	frequencySta(minEnv[kk], maxEnv[kk],freqnum,test_upEnvValues.at(kk), frequency);			 
-		//	for(int n = 0; n < freqnum; n++){				
-		//		cout << frequencyTrain[5][kk][n] << ", ";
-		//	}
-		//	cout << endl;
-		//	float envsimi = histSimilarity(frequency, frequencyTrain[5][kk], freqnum);
-		//	cout << envsimi << endl;
-		//}
-
-
-		//// print environmental values
-		//for (int kk = 0; kk < env_num; kk++) {
-		//	cout << "Env No. " << kk << ", " << envfs[kk] << endl;
-		//	vector<float> tmpff = test_upEnvValues.at(kk);
-		//	for (vector<float>::iterator it = tmpff.begin(); it != tmpff.end(); it++) {
-		//		cout << *it << ", ";
-		//	}
-		//	cout << endl;
-		//}
-
-
+        tdpartition *pred_part = NULL;
+        tdpartition *uncer_part = NULL;
+        if (outtype != 1) {
+            if (rank == 0) {
+                cout << "============= Predict on the whole area  =============" << endl;
+            }
+            //calculate predictive value for pred_part
+            pred_part = CreateNewPartition(FLOAT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
+            uncer_part = CreateNewPartition(FLOAT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
+            for (int j = 0; j < ny; j++){ // row
+                for (int i = 0; i < nx; i++){ // col
+                    int iglob, jglob;
+                    pred_part->localToGlobal(i, j, iglob, jglob);
+                    int pixel_idx = jglob * totalX + iglob;
+                    if (cells_map.find(pixel_idx) == cells_map.end()) {
+                        continue;
+                    }
+                    Cell *cur_cell = cells_map.at(pixel_idx);
+                    if (pixel_idx == 46619) {
+                        ;
+                    }
+                    cout << rank << ": " << pixel_idx << ": ";
+                    bool istrain = false;
+                    for (k = 0; k < num_train; k++) {
+                        if (train_idx[k] == pixel_idx) {
+                            istrain = true;
+                            break;
+                        }
+                    }
+                    if (!istrain) {
+                        cur_cell->frequencyStats(cells_map, env_num, minEnv, maxEnv, freqnum);
+                        cur_cell->predictProperty(cells_map, env_num, minEnv, maxEnv, num_train, train_idx);
+                    }
+                    pred_part->setData(i, j, cur_cell->getAttribute());
+                    uncer_part->setData(i, j, cur_cell->getUnCertainty());
+                    cout << cur_cell->getAttribute() << ", " << cur_cell->getUnCertainty() << endl;
+                }
+            }
+        }
         // END COMPUTING CODE BLOCK
-		tdpartition *pred_part = NULL;				
-		tdpartition *uncer_part = NULL;
+
         double computet = MPI_Wtime(); // record computing time
         if (outtype != 1) {
-			//calculate predictive value for pred_part
-			pred_part = CreateNewPartition(FLOAT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
-			uncer_part = CreateNewPartition(FLOAT_TYPE, totalX, totalY, dx, dy, NODATA_VALUE);
-			predictProperty(pred_part, uncer_part, nx, ny, cells_map, frequencyTrain, minEnv,
-				maxEnv, attrs_train, env_num, freqnum, num_train);			
             // create and write TIFF file to output predictive soil property
             float nodata = NODATA_VALUE;
             tiffIO predTIFF(predf, FLOAT_TYPE, &nodata, *fdir_rst);
@@ -476,7 +414,7 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 			// create and write TIFF file to output prediction uncertainty			
 			tiffIO uncerTIFF(uncerf, FLOAT_TYPE, &nodata, *fdir_rst);
 			uncerTIFF.write(xstart, ystart, ny, nx, uncer_part->getGridPointer());
-			cout << "finished" << endl;
+			//cout << "finished" << endl;
         }
 
         double writet = MPI_Wtime(); // record writing time
@@ -508,354 +446,6 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
     MPI_Finalize();
     return 0;
 }
-
-/*!
- * \brief Original serial version by an.
- * \deprecated Replaced by parallized version.
- */
-//
-//int predict_point_sfd_serial(string demPath, string sfdPath, vector<string> environLyrs, string trainSamplePath,
-//    string testSamplePath, string xName, string yName, string propertyName, string propertyPredPath, int envN)
-//{
-//    time_t beginTime, endTime, usedTime;
-//	beginTime = clock();
-//
-//	AscGrid demLyr, sfdLyr;	
-//	demLyr.readAscGridGDAL(demPath);	
-//	sfdLyr.readAscGridGDAL(sfdPath);
-//	int totalRows = demLyr.getNumOfRows(); 
-//	int totalCols = demLyr.getNumOfCols();
-//	double cellSize = demLyr.getCellSize();
-//	double lowerLeftX = demLyr.getXCor();
-//	double lowerLeftY = demLyr.getYCor();
-//	double noData = demLyr.getNodaVal();	
-//	double ** dem = new double * [totalRows];	
-//	double ** sfd = new double *[totalRows];
-//	for(int i = 0; i < totalRows; i++){
-//		dem[i] = new double[totalCols];
-//		sfd[i] = new double [totalCols];
-//	}
-//	dem = demLyr.values;
-//	sfd = sfdLyr.values;
-//	cout << "read elevation and sfd data finished" << endl;
-//
-//	/*read env data:1.get the file names of env layers, 2.read env layers*/
-//    /*vector<string> environLyrs;
-//    parseStr(string(environLyrsPath),'#',environLyrs);*/
-//	int numOfLyr = environLyrs.size();
-//	AscGrid * envLyr = new AscGrid[numOfLyr];	
-//	double *** envValue = new double **[numOfLyr];	
-//	double * minEnv = new double[numOfLyr];
-//	double * maxEnv = new double[numOfLyr];		
-//	for(int f = 0; f < numOfLyr; f++){
-//		envValue[f] = new double * [totalRows];		
-//		for(int i = 0; i < totalRows; i++){
-//			envValue[f][i] = new double [totalCols];			
-//		}
-//	}	
-//	for(int f = 0; f < numOfLyr; f++){
-//		envLyr[f].readAscGridGDAL(environLyrs[f]);
-//		envValue[f] = envLyr[f].values;
-//		minEnv[f] = envLyr[f].getMin();
-//		maxEnv[f] = envLyr[f].getMax();
-//		//cout << maxEnv[f] << ", " << minEnv[f] << endl;
-//	}
-//	delete [] envLyr;
-//	cout << "read env data finished" << endl;
-//	
-//	//read training samples and testing samples
-//	vector<vector<string> > trainSampleList;
-//	vector<string> fields;
-//	FILE *pfin = NULL;
-//	pfin = fopen(trainSamplePath.c_str(),"r");
-//	if(pfin == NULL)
-//		cerr<<"fail to open training sample file"<<endl;
-//	char row[500];
-//	while (fgets(row,500,pfin)!= NULL){
-//		string line = string(row);
-//		parseStr(line,',',fields);
-//		trainSampleList.push_back(fields);
-//		fields.clear();
-//	}
-//	fclose(pfin);
-//	
-//	vector<vector<string> > testSampleList;
-//	vector<string> field;
-//	FILE *pfins = NULL;
-//    pfins = fopen(testSamplePath.c_str(), "r");
-//	if(pfins == NULL)
-//		cerr<<"fail to open testing sample file"<<endl;
-//	char rows[500];
-//	while (fgets(rows,500,pfins)!= NULL){
-//		string line = string(rows);
-//		parseStr(line,',',field);
-//		testSampleList.push_back(field);
-//		field.clear();
-//	}
-//	fclose(pfins);
-//	
-//	int numOfTrainSamples = trainSampleList.size() - 1; // the first row in training sample file
-//	int columnsTrainSamples = trainSampleList[0].size();// 样点文件列数,sampleList[0]即样点文件中的第一行title
-//	int xIndexTrain = 0;
-//	int yIndexTrain = 0;
-//	int propertyIndexTrain = 0;
-//	
-//	int numOfTestSamples = testSampleList.size() - 1; // the first row in Testing sample file
-//	int columnsTestSamples = testSampleList[0].size();// 样点文件列数,sampleList[0]即样点文件中的第一行title
-//	int xIndexTest = 0;
-//	int yIndexTest = 0;
-//	int propertyIndexTest = 0;	
-//	
-//	int* trainSampleRows = new int[numOfTrainSamples];
-//	int* trainSampleCols = new int[numOfTrainSamples];
-//	double* trainProperty = new double[numOfTrainSamples];
-//	for (int j = 0; j < columnsTrainSamples; j++){
-//		//注意去除换行符
-//        if (strcmp(xName.c_str(), trimLineBreak(trainSampleList[0][j]).c_str()) == 0){
-//			xIndexTrain = j;
-//		}
-//        if (strcmp(yName.c_str(), trimLineBreak(trainSampleList[0][j]).c_str()) == 0){
-//			yIndexTrain = j;
-//		}
-//        if (strncmp(propertyName.c_str(), trimLineBreak(trainSampleList[0][j]).c_str(), strlen(propertyName.c_str())) == 0){
-//			propertyIndexTrain = j;
-//		}
-//	}
-//	
-//	//cout << xIndexTrain << ", " << yIndexTrain << ", " << propertyIndexTrain << endl;
-//	for(int i = 1; i <= numOfTrainSamples;i++){
-//		double curXTrain = string_to_double(trainSampleList[i][xIndexTrain]);//x属性列的值
-//		double curYTrain = string_to_double(trainSampleList[i][yIndexTrain]);
-//		trainSampleRows[i - 1] = totalRows - (int)((curYTrain - lowerLeftY) / cellSize) - 1;
-//		trainSampleCols[i-1] = (int)((curXTrain	- lowerLeftX) / cellSize);
-//		trainProperty[i - 1] = string_to_double(trainSampleList[i][propertyIndexTrain]);
-//	}
-//	int* testSampleRows = new int[numOfTestSamples];
-//	int* testSampleCols = new int[numOfTestSamples];
-//	double* testProperty = new double[numOfTestSamples];
-//	
-//	for (int j = 0; j < columnsTestSamples; j++){
-//		//注意去除换行符
-//		if (strcmp(xName.c_str(), trimLineBreak(testSampleList[0][j]).c_str()) == 0){
-//			xIndexTest = j;
-//		}
-//		if (strcmp(yName.c_str(), trimLineBreak(testSampleList[0][j]).c_str()) == 0){
-//			yIndexTest = j;
-//		}
-//		if (strncmp(propertyName.c_str(), trimLineBreak(testSampleList[0][j]).c_str(), strlen(propertyName.c_str())) == 0){
-//			propertyIndexTest = j;
-//		}
-//	}
-//	//cout << xIndexTest << ", " << yIndexTest << ", " << propertyIndexTest << endl;
-//	for(int i = 1; i <= numOfTestSamples;i++){
-//		double curXTest = string_to_double(testSampleList[i][xIndexTest]);//x属性列的值
-//		double curYTest = string_to_double(testSampleList[i][yIndexTest]);		
-//		testSampleRows[i - 1] = totalRows - (int)((curYTest - lowerLeftY) / cellSize) - 1;
-//		testSampleCols[i - 1] = (int)((curXTest	- lowerLeftX) / cellSize);		
-//		testProperty[i - 1] = string_to_double(testSampleList[i][propertyIndexTest]);
-//	}
-//	cout << "read sample files finished" << endl;
-//	
-//	//define 3 vectors to record the relative coordinates of 8 pixels in the 3*3 neighborhood in rectangle shape
-//	// and the value of flow direction if the pixel flow into the central location
-//	int array1[] = {0, -1, -1, -1, 0, 1, 1, 1};
-//	int array2[] = {-1, -1, 0, 1, 1, 1, 0, -1};
-//	int array3[] = {1, 2, 4, 8, 16, 32, 64, 128};
-//	vector <int> rNeighbor;
-//	vector <int> cNeighbor;
-//	vector <int> sfdNeighbor;
-//	for(int i = 0; i < 8; i++){
-//		rNeighbor.push_back(array1[i]);
-//		cNeighbor.push_back(array2[i]);
-//		sfdNeighbor.push_back(array3[i]);
-//	}
-//	
-//	// determine the neighborhood size of training samples
-//	// and calculate the frequency of env values from the histogram of the neighborEnv
-//	double ** flag = new double * [totalRows];
-//	double *** frequencyTrain = new double **[numOfTrainSamples];
-//	for(int i = 0; i < numOfTrainSamples; i++){
-//		frequencyTrain[i] = new double * [numOfLyr];
-//		for(int f = 0; f < numOfLyr; f++){
-//			frequencyTrain[i][f] = new double[envN];
-//			for(int j = 0; j < envN; j++){
-//				frequencyTrain[i][f][j] = 0;
-//			}
-//		}
-//	}
-//	for(int i = 0; i < totalRows; i++){
-//		flag[i] = new double [totalCols];		
-//	}
-//	sfdRegionSimilarity train;	
-//	vector<double> neighborEnv;
-//	for(int i = 0; i < numOfTrainSamples; i++){		
-//		for(int row = 0; row < totalRows; row++){			
-//			for(int col = 0; col < totalCols; col++){
-//				flag[row][col] = noData;
-//			}
-//		}
-//		int rowTrain = trainSampleRows[i];
-//		int colTrain = trainSampleCols[i];
-//		double demTrain = dem[rowTrain][colTrain];
-//		if(abs(demTrain - noData) > VERY_SMALL){
-//			int neighborSize = train.getCharacterNeighbor(rowTrain, colTrain, dem, sfd, totalRows, 
-//				totalCols, noData, rNeighbor, cNeighbor, sfdNeighbor, flag);
-//			//cout << neighborSize << endl;
-//			
-//			
-//			for(int f = 0; f < numOfLyr; f++){			
-//				train.getNeighborEnv(rowTrain, colTrain, totalRows, totalCols, neighborSize, envValue[f], 
-//					flag, noData, neighborEnv);				
-//				//cout << neighborEnv.size() << endl;
-//				train.frequencySta(minEnv[f], maxEnv[f], envN, neighborEnv, frequencyTrain[i][f]);
-//				neighborEnv.clear();	
-//			}
-//		}			
-//		//cout << rCord.size() << endl;			
-//	}	
-//	cout << "calculation neighborSize of training samples finished" << endl;
-//	//sleep(1000);
-//	
-//	double * propertyPredValue = new double[numOfTestSamples];
-//	double * predUncertainty = new double[numOfTestSamples];
-//	double ** sampleSimilarity = new double*[numOfTestSamples];
-//	for(int i = 0; i < numOfTestSamples; i++){
-//		sampleSimilarity[i] = new double [numOfTrainSamples];	
-//		for(int j = 0; j < numOfTrainSamples; j++){
-//			sampleSimilarity[i][j] = noData;
-//		}
-//	}
-//	sfdRegionSimilarity test;	
-//	//calculate the env similarity over the spatial neighborhood between training and testing samples
-//	for(int i = 0; i < numOfTestSamples; i++){			
-//		int rowTest = testSampleRows[i];
-//		int colTest = testSampleCols[i];
-//		int demTest = dem[rowTest][colTest];
-//		if(abs(demTest - noData) > VERY_SMALL){
-//			for(int row = 0; row < totalRows; row++){			
-//				for(int col = 0; col < totalCols; col++){
-//					flag[row][col] = noData;
-//				}
-//			}
-//			int neighborSize = test.getCharacterNeighbor(rowTest, colTest, dem, sfd, totalRows, totalCols,
-//				noData,	rNeighbor, cNeighbor, sfdNeighbor, flag);
-//			double ** frequency = new double * [numOfLyr];
-//			for(int f = 0; f < numOfLyr; f++){
-//				frequency[f] = new double [envN];
-//				for(int k = 0; k < envN;k++){
-//					frequency[f][k] = 0;
-//				}
-//				test.getNeighborEnv(rowTest, colTest, totalRows, totalCols, neighborSize, envValue[f], 
-//					flag, noData, neighborEnv);
-//				test.frequencySta(minEnv[f], maxEnv[f], envN, neighborEnv, frequency[f]);
-//				neighborEnv.clear();				
-//			}
-//			for(int j = 0; j < numOfTrainSamples; j++){
-//				int rowTrain = trainSampleRows[j];
-//				int colTrain = trainSampleCols[j];
-//				double demTrain = dem[rowTrain][colTrain];
-//				if(abs(demTrain - noData) > VERY_SMALL){
-//					double * similarityH = new double [numOfLyr];
-//					for(int f = 0; f < numOfLyr; f++){					
-//						similarityH[f] = test.histSimilarity(frequency[f], frequencyTrain[j][f], envN);			
-//						//cout << similarityH[f] << endl;					
-//					}
-//					double similarityEnv = getSimilaityIntegration(similarityH, numOfLyr, noData);
-//					sampleSimilarity[i][j] = similarityEnv;
-//					//cout << i << ", " << j << ", " << similarityEnv << endl;
-//					delete [] similarityH;
-//				}					
-//			}
-//			for(int f = 0; f < numOfLyr; f++){
-//				delete [] frequency[f];
-//			}
-//			delete [] frequency;				
-//			
-//		}			
-//		//cout << neighborSize << endl;		
-//	}
-//	vector<double>().swap(neighborEnv);	
-//	delete [] frequencyTrain;
-//	delete[] trainSampleRows;
-//	delete[] trainSampleCols;
-//	delete [] dem;
-//	delete [] envValue;	
-//	
-//	//evaluate the soil property value and calculate the prediction uncertainty of testing samples
-//	for(int i = 0; i < numOfTestSamples; i++){
-//		double sampleSimilarityMax = getMaxValue(sampleSimilarity[i], numOfTrainSamples, noData);
-//		//cout << sampleSimilarityMax << endl;
-//		if(abs(sampleSimilarityMax - noData) < VERY_SMALL){
-//			predUncertainty[i] = noData;
-//			propertyPredValue[i] = noData;
-//		}else if(sampleSimilarityMax == 0){
-//			predUncertainty[i] = 1;
-//			propertyPredValue[i] = noData;
-//		}else{
-//			predUncertainty[i] = 1 - sampleSimilarityMax;
-//			double sumProperty = 0;
-//			double sumSimilarity = 0;
-//			double maxSimilarityProperty = 0;
-//			double maxSimilarity = 0;
-//			for(int j = 0; j < numOfTrainSamples; j++){	
-//				if(abs(sampleSimilarity[i][j] - noData) > VERY_SMALL){														
-//					sumProperty += trainProperty[j] * sampleSimilarity[i][j];
-//					sumSimilarity += sampleSimilarity[i][j];
-//				}
-//				/*if(abs(sampleSimilarity[i][j] - noData) > VERY_SMALL){														
-//					sumProperty += trainProperty[j] * sampleSimilarity[i][j];
-//					sumSimilarity += sampleSimilarity[i][j];
-//					if(sampleSimilarity[i][j] > maxSimilarity){
-//						maxSimilarity = sampleSimilarity[i][j];
-//						maxSimilarityProperty = maxSimilarity * trainProperty[j];
-//					}
-//					
-//				}*/
-//			}
-//			propertyPredValue[i] = sumProperty / sumSimilarity;
-//			//propertyPredValue[i] = maxSimilarityProperty + (1 - maxSimilarity) * (sumProperty - maxSimilarityProperty) / (sumSimilarity - maxSimilarity);
-//
-//		}
-//	}
-//	cout << "predicting testing samples finished" << endl;
-//	//将预测结果输出
-//	ofstream fin(propertyPredPath); 
-//	if(!fin){
-//		cout << "Unable to open outfile"<<endl;// terminate with error
-//	}
-//	fin << "ID,testProperty,pred_property,Uncertainty" << endl;
-//	for(int i = 0; i < numOfTestSamples; i++){
-//		fin << i<< "," << testProperty[i] <<","<< propertyPredValue[i] << "," << predUncertainty[i]<< endl;
-//	}		
-//	fin.close();
-//	
-//	
-//	/*ofstream out(similarityPath); //输出样点相似性
-//	if(!out){
-//		cout << "Unable to open outfile"<<endl;// terminate with error
-//	}
-//	out << "trainID,testID,similarity" << endl;
-//	for(int i = 0; i < numOfTestSamples; i++){
-//		for(int j = 0; j < numOfTrainSamples; j++){
-//			out << i<< "," << j <<","<< sampleSimilarity[i][j]<< endl;
-//		}		
-//	}		
-//	out.close();*/
-//	
-//	endTime = clock();
-//	usedTime = double(endTime - beginTime)/CLOCKS_PER_SEC;
-//	cout << "time used is " << usedTime << ", seconds" << endl;
-//
-//	
-//	delete[] propertyPredValue;
-//	delete[] predUncertainty;
-//	delete[] trainProperty;
-//	
-//	cout << "OK!" << endl;	
-//	return 0;
-//	
-//}
-
 
 int main(int argc, char *argv[]){
     GDALAllRegister();
@@ -901,27 +491,11 @@ int main(int argc, char *argv[]){
     }
 
     vector<string> environLyrs = SplitString(environLyrsPath, '#');
-    cout << endl << "INPUT SUMMARY: " << endl;
-    if (flowdir_model == 0) cout << "D8 ";
-    else if (flowdir_model == 1) cout << "Dinf ";
-    cout << "Flow Direction: " << flowDirectionPath << endl;
-    cout << "Stream: " << streamPath << endl;
-    cout << "Environment variables: " << endl;
-    for (vector<string>::iterator it = environLyrs.begin(); it != environLyrs.end(); it++) {
-        cout << "    " << *it << endl;
-    }
-    cout << "Training samples path: " << trainSamplePath << endl;
-    cout << "XName: " << xName << ", YName: " << yName << ", Property: " << propertyName << endl;
-    if (NULL != validationSamplePath)
-        cout << "Validation samples path: " << validationSamplePath << endl;
-    if (NULL != predPath)
-        cout << "Output prediction: " << predPath << endl;
-	if (NULL != uncerPath)
-		cout << "Output uncertainty: " << uncerPath << endl;
+    
     predict_point_sfd(flowdir_model, flowDirectionPath, streamPath, environLyrs,
         trainSamplePath, xName, yName,propertyName, envN, outType,
         validationSamplePath, predPath, uncerPath);
-	system("pause");
+	//system("pause");
 	return 0;
 
 }
