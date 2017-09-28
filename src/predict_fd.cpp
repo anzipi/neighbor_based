@@ -306,37 +306,7 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
         //for (vector<int>::iterator it = maxupcells.begin(); it != maxupcells.end(); it++) {
         //    pred_part->setData(*it % totalY, *it / totalY, 1.f);
         //}
-        // Get one environmental variables of one cell's upstream cells
-    //    int test_idx = 187;
-    //    Cell* test_cell = cells_map.at(test_idx);
-    //    vector<int> test_upIdxes;
-    //    test_cell->getUpCellIndexes(test_upIdxes);
-    //    map<int, vector<float> > test_upEnvValues;
-    //    for (int kk = 0; kk < env_num; kk++) {
-    //        vector<float> tmpvalues;
-    //        test_upEnvValues.insert(make_pair(kk, tmpvalues));
-    //    }
-    //    for (vector<int>::iterator it = test_upIdxes.begin(); it != test_upIdxes.end(); it++) {
-    //        vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
-    //        if (tmpEnvvs.size() != env_num) {
-    //            continue; // although this may not happen, just check.
-    //        }
-    //        for (int kk = 0; kk < env_num; kk++) {
-    //            test_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);
-				//cout << test_upEnvValues.at(kk).size() << endl;
-    //        }
-    //    }
-
-    //    // print environmental values
-    //    for (int kk = 0; kk < env_num; kk++) {
-    //        cout << "Env No. " << kk << ", " << envfs[kk] << endl;
-    //        vector<float> tmpff = test_upEnvValues.at(kk);
-    //        for (vector<float>::iterator it = tmpff.begin(); it != tmpff.end(); it++) {
-    //            cout << *it << ", ";
-    //        }
-    //        cout << endl;
-    //    }
-
+       
         /******** TEST CODE DONE *********/
 
 		vector<int> row_train;
@@ -357,8 +327,8 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 				row_train.push_back(row);
 				col_train.push_back(col);
 			}
-			vector<double>().swap(xTrain);
-			vector<double>().swap(yTrain);
+			vector<double>(xTrain).swap(xTrain);
+			vector<double>(yTrain).swap(yTrain);
 			cout << "============= Read training samples finished =============" << endl;
 		}
 		MPI_Bcast(&num_train, 1, MPI_INT, 0, MCW);
@@ -387,12 +357,15 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 		}
 		cout << "============= get max and min value for each env layer finished =============" << endl;
 		
-		
+				
 		float *** frequencyTrain = new float**[num_train];
 		for(int train = 0; train < num_train; train++){
 			frequencyTrain[train] = new float *[env_num];
 			for(int kk = 0; kk < env_num; kk++){
 				frequencyTrain[train][kk] = new float [freqnum];
+				for(int n = 0; n < freqnum; n++){
+					frequencyTrain[train][kk][n] = 0;
+				}
 			}
 		}
 		if (rank == 0) {
@@ -418,12 +391,70 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
 				}
 				//这里需要一个函数统计该样点邻域环境变量的频率分布			
 				for(int kk = 0; kk < env_num; kk++){								
-					frequencySta(minEnv[kk], maxEnv[kk], freqnum,cur_upEnvValues.at(kk), frequencyTrain[train][kk]);
+					frequencySta(minEnv[kk], maxEnv[kk], freqnum, cur_upEnvValues.at(kk), frequencyTrain[train][kk]);
 				}
 			}
 		}		
 		cout << "============= calculate neighborhood feature for training samples finished =============" << endl;
 		MPI_Bcast(&frequencyTrain, num_train * env_num * freqnum, MPI_FLOAT, 0, MCW);
+
+
+		/*for(int train = 0; train < num_train; train++){
+			for(int kk = 0; kk < env_num; kk++){
+				for(int n = 0; n < freqnum; n++){				
+					cout << train << ", " << kk << ", " << frequencyTrain[train][kk][n] << ", " << endl;
+				}
+				cout << endl;
+			}
+		}	*/
+
+
+		//Get one environmental variables of one cell's upstream cells
+		//int test_idx = 12387;
+		//Cell* test_cell = cells_map.at(test_idx);
+		//vector<int> test_upIdxes;
+		//test_cell->getUpCellIndexes(test_upIdxes);
+		//map<int, vector<float> > test_upEnvValues;
+		//for (int kk = 0; kk < env_num; kk++) {
+		//	vector<float> tmpvalues;
+		//	test_upEnvValues.insert(make_pair(kk, tmpvalues));
+		//}
+		//for (vector<int>::iterator it = test_upIdxes.begin(); it != test_upIdxes.end(); it++) {
+		//	vector<float> tmpEnvvs = cells_map.at(*it)->getEnvValue();
+		//	if (tmpEnvvs.size() != env_num) {
+		//		continue; // although this may not happen, just check.
+		//	}
+		//	for (int kk = 0; kk < env_num; kk++) {
+		//		test_upEnvValues.at(kk).push_back(tmpEnvvs[kk]);
+		//		//cout << test_upEnvValues.at(kk).size() << endl;
+		//	}
+		//}
+		//for (int kk = 0; kk < env_num; kk++) {
+		//	float * frequency = new float[freqnum];
+		//	for(int n = 0; n < freqnum; n++){
+		//		frequency[n] = 0;
+		//	}
+		//	cout << "ENV No.: " << kk << ", " << test_upEnvValues.at(kk).size() << endl;
+		//	frequencySta(minEnv[kk], maxEnv[kk],freqnum,test_upEnvValues.at(kk), frequency);			 
+		//	for(int n = 0; n < freqnum; n++){				
+		//		cout << frequencyTrain[5][kk][n] << ", ";
+		//	}
+		//	cout << endl;
+		//	float envsimi = histSimilarity(frequency, frequencyTrain[5][kk], freqnum);
+		//	cout << envsimi << endl;
+		//}
+
+
+		//// print environmental values
+		//for (int kk = 0; kk < env_num; kk++) {
+		//	cout << "Env No. " << kk << ", " << envfs[kk] << endl;
+		//	vector<float> tmpff = test_upEnvValues.at(kk);
+		//	for (vector<float>::iterator it = tmpff.begin(); it != tmpff.end(); it++) {
+		//		cout << *it << ", ";
+		//	}
+		//	cout << endl;
+		//}
+
 
         // END COMPUTING CODE BLOCK
 		tdpartition *pred_part = NULL;				
