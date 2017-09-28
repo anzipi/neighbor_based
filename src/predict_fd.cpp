@@ -44,8 +44,8 @@ using namespace std;
  */
 
 int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string> envfs,
-    char *trainf,string xname, string yname, string attrname, int freqnum, int outtype,
-    char *validf= NULL, char *predf = NULL, char *uncerf = NULL)
+    char *trainf, string xname, string yname, string attrname, int freqnum, int outtype,
+    char *validf = NULL, char *predTestf = NULL, char *predf = NULL, char *uncerf = NULL)
 {
     MPI_Init(NULL, NULL);
     {
@@ -68,6 +68,8 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
             cout << "XName: " << xname << ", YName: " << yname << ", Property: " << attrname << endl;
             if (NULL != validf)
                 cout << "Validation samples path: " << validf << endl;
+            if (NULL != predTestf)
+                cout << "Predicted validation samples  path: " << predTestf << endl;
             if (NULL != predf)
                 cout << "Output prediction: " << predf << endl;
             if (NULL != uncerf)
@@ -326,13 +328,13 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
             train_attrs = new double[num_train];
             for (int train = 0; train < num_train; train++){
                 int row, col;
+                train_attrs[train] = attrs_train[train];
                 fdir_rst->geoToGlobalXY(xTrain[train], yTrain[train], col, row);
                 int tmpidx = row * totalX + col;
                 if (cells_map.find(tmpidx) == cells_map.end()) {
                     continue;
                 }
-                train_idx[train] = tmpidx;
-                train_attrs[train] = attrs_train[train];
+                train_idx[train] = tmpidx;                
             }
             cout << "============= Read training samples finished =============" << endl;
         }
@@ -362,6 +364,64 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
         //for (i = 0; i < num_train; i++) {
         //    cout << train_idx[i] << ": " << cells_map.at(train_idx[i])->getAttribute() << endl;
         //}
+
+        if(outtype == 1 || outtype == 2){
+            if(rank == 0){
+                cout << "============= Read testing samples  =============" << endl;
+
+                vector<double> xTest;
+                vector<double> yTest;
+                vector<double> attrs_test;	
+                int num_test = 0;
+                int *test_idx;
+                double *test_attrs;
+                if (!FileExists(validf)){
+                    cout << "File not existed: " << validf << endl;
+                    MPI_Abort(MCW, 5);
+                    return 1;
+                }
+                readSamples(validf, xname, yname, attrname, xTest, yTest, attrs_test);
+                num_test = xTest.size();
+                test_idx = new int[num_test];
+                test_attrs = new double[num_test];
+                for (int test = 0; test < num_test; test++){                   
+                    int row, col;
+                    test_attrs[test] = attrs_test[test];
+                    fdir_rst->geoToGlobalXY(xTest[test], yTest[test], col, row);
+                    int tmpidx = row * totalX + col;
+                    if (cells_map.find(tmpidx) == cells_map.end()) {
+                        continue;
+                    }
+                    test_idx[test] = tmpidx;                 
+                }
+                cout << "============= Read testing samples finished =============" << endl;
+                float *pred_test = new float[num_test];
+                float *uncer_test = new float[num_test];
+                for (int test = 0; test < num_test; test++){
+                    if (cells_map.find(test_idx[test]) == cells_map.end()) {
+                        continue;
+                    }
+                    Cell* cur_cell = cells_map.at(test_idx[test]);                    
+                    bool istrain = false;
+                    for (int train = 0;  train < num_train; train++) {
+                        if (train_idx[train] == test_idx[test]) {
+                            istrain = true;
+                            break;
+                        }
+                    }
+                    if (!istrain) {
+                        cur_cell->frequencyStats(cells_map, env_num, minEnv, maxEnv, freqnum);
+                        cur_cell->predictProperty(cells_map, env_num, minEnv, maxEnv, num_train, train_idx);
+                    }
+
+                    pred_test[test] = cur_cell->getAttribute();
+                    uncer_test[test] = cur_cell->getUnCertainty();
+                    cout << test << ", " << pred_test[test] << ", " << uncer_test[test] << endl;                   
+                }
+                writeSampleFile(predTestf, test_attrs, pred_test, uncer_test, num_test);
+                cout << "============= Read writing testing samples finished =============" << endl;
+            }
+        }
 
         tdpartition *pred_part = NULL;
         tdpartition *uncer_part = NULL;
@@ -400,6 +460,10 @@ int predict_point_sfd(int fdmodel, char *flowdirf, char *streamf, vector<string>
                 }
             }
         }
+        
+        
+
+
         // END COMPUTING CODE BLOCK
 
         double computet = MPI_Wtime(); // record computing time
@@ -466,6 +530,7 @@ int main(int argc, char *argv[]){
      */
     int outType = atoi(argv[10]);
     char *validationSamplePath = NULL;
+    CHAR *predtestPath = NULL;
     char *predPath = NULL;
 	char *uncerPath = NULL;
     if (outType == 0) {
@@ -474,6 +539,7 @@ int main(int argc, char *argv[]){
     }
     else if (outType == 1) {
         validationSamplePath = argv[11];
+        predtestPath = argv[12];
     }
     else if (outType == 2) {
         if (argc < 11) {
@@ -481,8 +547,9 @@ int main(int argc, char *argv[]){
                 "are both required when outType is 2." << endl;
         }
         validationSamplePath = argv[11];
-        predPath = argv[12];
-		uncerPath = argv[13];
+        predtestPath = argv[12];
+        predPath = argv[13];
+		uncerPath = argv[14];
     }
     else {
         cout << "outType must be 0, 1, or 2!" << endl;
@@ -492,8 +559,8 @@ int main(int argc, char *argv[]){
     
     predict_point_sfd(flowdir_model, flowDirectionPath, streamPath, environLyrs,
         trainSamplePath, xName, yName,propertyName, envN, outType,
-        validationSamplePath, predPath, uncerPath);
-	//system("pause");
+        validationSamplePath, predtestPath, predPath, uncerPath);
+	system("pause");
 	return 0;
 
 }
